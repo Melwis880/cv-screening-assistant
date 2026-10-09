@@ -32,8 +32,8 @@ One entry per architecture or security decision, written when the decision is ma
 - **Alternatives:** Free-text JSON with "please return JSON"; tool use with a forced tool.
 - **Why:** Structured outputs constrain the response to the schema at decode time; Pydantic validation gives a second check and typed objects. One source of truth for the schema.
 
-## 2026-10-09 – Reply emails are templates with both variants, never sent
-- **Decision:** Each candidate gets a Markdown draft containing both an "invite to interview" and a "decline" variant, with the tool's suggestion labelled. Nothing is sent.
+## 2026-10-09 – Reply emails are templates with all variants, never sent
+- **Decision:** Each candidate gets a Markdown draft containing an "invite to interview" and a "decline" variant, with the tool's suggestion labelled. Nothing is sent. *Amended the same day:* a third variant, "ask for missing information", lists the candidate's unclear must-haves as questions, because "unknown" results needed a matching reply.
 - **Alternatives:** One LLM-written email per candidate in the variant the ranking suggests.
 - **Why:** Writing only the decline would be an auto-rejection in practice. Templates cost nothing, cannot hallucinate, and keep the decision visibly with the manager.
 
@@ -61,3 +61,13 @@ One entry per architecture or security decision, written when the decision is ma
 - **Decision:** `--workers 4` by default, using a thread pool. SDK retries (`max_retries=3`) cover 429/5xx.
 - **Alternatives:** Sequential calls; Message Batches API (50% cheaper, asynchronous).
 - **Why:** 40 sequential calls take minutes; a manager runs this interactively. Batches would halve a cost that is already cents per opening, at the price of waiting up to hours.
+
+## 2026-10-09 – Keep the brief's default model; any model via `--model`
+- **Decision:** Default extraction model `claude-haiku-4-5-20251001` as the brief specifies, overridable with `--model` or `CV_SCREEN_MODEL`. Prices for a few current models are in `extract.PRICES_PER_MTOK`; an unknown model reports cost as unknown instead of $0.
+- **Alternatives:** Default to the newest Haiku (cheaper per token); a larger model for accuracy.
+- **Why:** The brief fixes the default. Extraction into a strict schema with quotes is a small, well-specified task that a small model should handle; whether a newer or larger model is worth it is a question for a measured real-mode comparison, not a guess.
+
+## 2026-10-09 – Test the real SDK path offline with a mock HTTP transport
+- **Decision:** One test builds a real `anthropic.Anthropic` client whose HTTP transport is mocked, so the actual request body (`output_config.format = json_schema`) is serialised by the SDK without any network access. Other tests use a duck-typed fake client. `anthropic>=1.12` is required (the version this was built and tested with).
+- **Alternatives:** Only a fake client; a recorded HTTP cassette.
+- **Why:** A fake client would accept parameters the SDK rejects. The mock transport catches that while keeping the suite offline, as the brief requires.

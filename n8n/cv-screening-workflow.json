@@ -1,0 +1,75 @@
+{
+  "name": "CV screening: new CV -> shortlist -> notify manager",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "folder",
+        "path": "/data/applications/junior-support",
+        "events": ["add"],
+        "options": { "awaitWriteFinish": true, "ignored": "**/.*" }
+      },
+      "id": "a1f0c6e2-0001-4c1e-9a10-000000000001",
+      "name": "New CV in folder",
+      "type": "n8n-nodes-base.localFileTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "minutes"
+      },
+      "id": "a1f0c6e2-0002-4c1e-9a10-000000000002",
+      "name": "Wait for more CVs (debounce)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "command": "cd /opt/cv-screening-assistant && . .venv/bin/activate && screen run /data/applications/junior-support --job job.yaml --out /data/screening/junior-support > /dev/null && cat /data/screening/junior-support/run_report.json"
+      },
+      "id": "a1f0c6e2-0003-4c1e-9a10-000000000003",
+      "name": "Run screening",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const report = JSON.parse($input.first().json.stdout);\nreturn [{ json: {\n  subject: `CV screening updated: ${report.cvs} CVs for ${report.job}`,\n  text: [\n    `The shortlist for \"${report.job}\" was updated.`,\n    ``,\n    `CVs: ${report.cvs} (manual review: ${report.manual_review})`,\n    `Tier A (all must-haves met): ${report.tiers.A}`,\n    `Tier B (check unclear items): ${report.tiers.B}`,\n    `Tier C (a must-have looks missing): ${report.tiers.C}`,\n    ``,\n    `Open /data/screening/junior-support/shortlist.md to review.`,\n    `The tool recommends, you decide. No emails were sent to candidates.`\n  ].join('\\n')\n} }];"
+      },
+      "id": "a1f0c6e2-0004-4c1e-9a10-000000000004",
+      "name": "Build notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "screening-bot@example.com",
+        "toEmail": "hiring-manager@example.com",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "a1f0c6e2-0005-4c1e-9a10-000000000005",
+      "name": "Notify hiring manager",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 300],
+      "credentials": {
+        "smtp": { "id": "REPLACE_ME", "name": "SMTP account" }
+      }
+    }
+  ],
+  "connections": {
+    "New CV in folder": { "main": [[{ "node": "Wait for more CVs (debounce)", "type": "main", "index": 0 }]] },
+    "Wait for more CVs (debounce)": { "main": [[{ "node": "Run screening", "type": "main", "index": 0 }]] },
+    "Run screening": { "main": [[{ "node": "Build notification", "type": "main", "index": 0 }]] },
+    "Build notification": { "main": [[{ "node": "Notify hiring manager", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

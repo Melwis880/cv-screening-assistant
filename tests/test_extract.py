@@ -137,3 +137,34 @@ def test_mock_extractor_layout_c(job):
     assert extraction.experience[0].start == "2023-06"
     assert extraction.languages[0].level is None
     assert extraction.languages[0].level_as_written == "fluent"
+
+
+def test_request_serialises_through_real_sdk(job):
+    """Use the real Anthropic client with a mock HTTP transport: no network, real request body."""
+    import json
+
+    import anthropic
+    import httpx2
+
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        return httpx2.Response(200, json={
+            "id": "msg_test", "type": "message", "role": "assistant",
+            "model": DEFAULT_MODEL, "stop_reason": "end_turn", "stop_sequence": None,
+            "content": [{"type": "text", "text": json.dumps(GOOD_PAYLOAD)}],
+            "usage": {"input_tokens": 1500, "output_tokens": 600},
+        })
+
+    client = anthropic.Anthropic(
+        api_key="test-key", base_url="http://127.0.0.1:9", max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+    )
+    extraction, usage = ClaudeExtractor(client=client).extract("Skills\nExcel\n", job)
+    assert seen["url"].endswith("/v1/messages")
+    assert seen["body"]["output_config"]["format"]["type"] == "json_schema"
+    assert seen["body"]["model"] == DEFAULT_MODEL
+    assert extraction.skills[0].name == "Zendesk"
+    assert usage.cost_usd == pytest.approx((1500 * 1.0 + 600 * 5.0) / 1e6)

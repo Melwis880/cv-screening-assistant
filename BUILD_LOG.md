@@ -42,7 +42,19 @@ Raw material for posts about the build. Factual only; numbers are labeled as dem
   past the line break. Without a test that diffs the redacted text, this would have shipped.
 
 ## Measured numbers (demo data)
-_(added after demo runs)_
+All on the 20 synthetic CVs, `--as-of 2026-10-01`, in a 4-core cloud container.
+- **Mock mode, wall-clock for 20 CVs:** 0.319 s, 0.336 s, 0.354 s, 0.402 s, 0.404 s over 5 runs
+  (about 0.02 s per CV). Cost $0 (no API calls).
+- **Mock mode shortlist:** tier A 7, tier B 9, tier C 4, manual review 0, dropped claims 0.
+- **Test suite:** 97 tests, about 3 s, fully offline.
+- **CI:** first push green on Python 3.11, 3.12 and 3.13, including a check that the sample
+  generator reproduces the committed files byte-for-byte.
+- **Real mode: not measured.** The build environment had no Anthropic API key. Prompt size
+  measured locally: fixed system prompt + JSON schema about 4,300 characters, redacted demo CV
+  message about 840 characters on average (max 1,042). Token count and cost per CV are an
+  estimate until a real run exists (see CASE_STUDY.md).
+- **Accuracy:** not measured. The mock extractor is rule-based and written for the sample
+  layout, so its results on the samples say nothing about LLM extraction accuracy.
 
 ## Post hooks
 - "Tell the model to ignore gender" is not a fairness control. "The model never receives it, and a
@@ -51,6 +63,21 @@ _(added after demo runs)_
   that produced "them" for women and "their" for men, only when a PDF line wrapped.
 - A CV parser's phone-number regex silently deleted every employment date. Every candidate would
   have become "experience unknown". Test the boring parts.
+- Asking the model for quotes is only half the trick. Checking that each quote is actually in
+  the CV is what turns a hallucination into a visible "unknown" instead of a silent "met".
+- "Unknown" is a feature: a CV that says "German: fluent" gets a question, not a rejection.
+  Keyword filters punish people for formatting, not for skills.
 
 ## Screenshots / GIFs to capture
-_(collected during the build)_
+- **Terminal GIF of the demo run:** `MOCK_LLM=1 screen run samples/ --job job.yaml --as-of 2026-10-01`
+  (shows the one-line summary and "No emails were sent").
+- **Rendered `out/shortlist.md`** on GitHub or in VS Code preview: the three tiers and the printed
+  ranking rule.
+- **Before/after redaction:** `samples/cv14.docx` opened in Word next to the "Removed before
+  matching" line and the "They are a patient support agent" sentence (e.g. from a debug print of
+  `redact(parse_file(...)).text`).
+- **`out/candidates/cv08.md`:** an `unknown` experience criterion with the quoted role line and the
+  question "Ask for dates".
+- **`out/emails/cv11.md`:** variant B asking for CEFR levels instead of guessing from "fluent".
+- **CI run** with the invariance test in the pytest output:
+  `pytest -v tests/test_invariance.py`.
