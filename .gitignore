@@ -27,3 +27,6 @@ leads.csv
 .DS_Store
 .vscode/
 .idea/
+
+# Screening output (contains personal data from CVs)
+out/
