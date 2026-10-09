@@ -15,7 +15,7 @@ Status legend: `[x]` done, `[ ]` not done. Re-read at the start of each work chu
 ## Phase 2 – Parsing and privacy
 - [x] PDF/DOCX/TXT to text
 - [x] Redaction of protected attributes (name, photo, age/DOB, gender, nationality, marital status, address, contact details, gendered pronouns)
-- [ ] Tests: parsing, redaction
+- [x] Tests: parsing, redaction
 
 ## Phase 3 – Extraction
 - [x] Strict schema (skills, experience entries, languages, education, evidence quote per claim)
@@ -23,12 +23,12 @@ Status legend: `[x]` done, `[ ]` not done. Re-read at the start of each work chu
 - [x] Mock extractor (`MOCK_LLM=1` / `--mock`) that works offline on the sample format
 - [x] Evidence verification: every quote must appear in the CV text, else the claim is dropped and flagged
 - [x] Years of relevant experience computed in code from dated entries
-- [ ] Tests: schema validation, real extractor against a fake client, evidence verification, missing info
+- [x] Tests: schema validation, real extractor against a fake client, evidence verification, missing info
 
 ## Phase 4 – Matching and ranking
 - [x] Per-criterion met / partly / not met / unknown with evidence line
 - [x] Transparent ranking (sort order printed, no hidden score)
-- [ ] Tests: criteria matching, ranking, protected-attribute invariance
+- [x] Tests: criteria matching, ranking, protected-attribute invariance
 
 ## Phase 5 – Outputs
 - [x] `shortlist.md` + `shortlist.csv`
@@ -38,15 +38,15 @@ Status legend: `[x]` done, `[ ]` not done. Re-read at the start of each work chu
 - [x] "Tool recommends, human decides" notice in every output
 
 ## Phase 6 – CI and docs
-- [ ] GitHub Actions: ruff + pytest + mock-mode smoke run
+- [x] GitHub Actions: ruff + pytest + sample reproducibility + mock-mode smoke run (Python 3.11-3.13)
 - [ ] README.md (architecture Mermaid, quickstart, config, limitations, fairness, privacy/retention)
 - [ ] CASE_STUDY.md with before/after table (estimate labeled, measured numbers only from demo runs)
 - [ ] Optional `n8n/` workflow JSON
 
 ## Phase 7 – Definition of done
-- [ ] Mock-mode run on samples produces shortlist
+- [x] Mock-mode run on samples produces shortlist
 - [ ] Real-mode run on samples produces shortlist
-- [ ] Invariance test passes
+- [x] Invariance test passes
 - [ ] CI green
 - [ ] No secrets in history
 - [ ] PR opened with summary

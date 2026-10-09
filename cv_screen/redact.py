@@ -79,8 +79,11 @@ _PRONOUNS = {
 _PRONOUN_RE = re.compile(r"\b(" + "|".join(_PRONOUNS) + r")\b", re.IGNORECASE)
 _PRONOUN_VERB_RE = re.compile(r"\b(he|she) (is|was|has)\b", re.IGNORECASE)
 _VERB_FIX = {"is": "are", "was": "were", "has": "have"}
-_HER_OBJECT_RE = re.compile(r"\bher\b(?=\s+(as|to|for|with|and|or|on|at|in|by)\b|[.,;!?]|$)",
-                            re.IGNORECASE | re.MULTILINE)
+# "her" is object ("describe her as") or possessive ("her team"); "his" is always possessive.
+# Look past line breaks: PDF wrapping must not change which form is chosen, or the redacted
+# text would still differ by gender.
+_HER_OBJECT_RE = re.compile(r"\bher\b(?=\s+(as|to|for|with|and|or|on|at|in|by)\b|\s*[.,;!?])",
+                            re.IGNORECASE)
 _GENDERED_WORDS_RE = re.compile(
     r"\b(male|female|man|woman|husband|wife|mother|father|mum|dad)\b", re.IGNORECASE
 )

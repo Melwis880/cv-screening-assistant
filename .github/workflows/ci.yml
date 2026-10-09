@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      MOCK_LLM: "1"  # CI never calls the API and has no key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Tests (offline)
+        run: pytest -q
+      - name: Samples are reproducible
+        run: |
+          python scripts/generate_samples.py
+          git diff --exit-code -- samples/
+      - name: Mock-mode demo run
+        run: |
+          screen run samples/ --job job.yaml --out out --as-of 2026-10-01
+          test -s out/shortlist.md
+          test -s out/shortlist.csv
+          test "$(ls out/candidates | wc -l)" -eq 20
+          test "$(ls out/emails | wc -l)" -eq 20

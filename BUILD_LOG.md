@@ -25,12 +25,32 @@ Raw material for posts about the build. Factual only; numbers are labeled as dem
   like a phone number, so job dates vanished from the redacted text (which would have turned
   every experience criterion into "unknown"). Fix: skip matches that look like dates or date
   ranges, and require 9+ digits or a leading `+`.
+- **Stripping schema titles deleted a field.** To make the Pydantic JSON schema strict I removed
+  every `"title"` key recursively. The `Experience` model has a *property* called `title`, so
+  it vanished from `properties` but stayed in `required`. Fix: only strip `title` when its value
+  is a string annotation, and never walk into `properties` as if it were an annotation dict.
+  Caught by printing the schema before writing any API code.
+- **The invariance test found a gender leak in pronoun rewriting.** `her` is object or possessive
+  ("describe her as" vs "her team"), `his` is always possessive. With the text wrapped as
+  `... and her\nteam relies on ...`, my end-of-line rule turned `her` into "them" while `his`
+  became "their":
+  ```
+  - rs and their        (variant with "his")
+  + rs and them         (variant with "her")
+  ```
+  So the redacted text still differed by gender. Fix: decide object vs possessive by looking
+  past the line break. Without a test that diffs the redacted text, this would have shipped.
 
 ## Measured numbers (demo data)
 _(added after demo runs)_
 
 ## Post hooks
-_(collected during the build)_
+- "Tell the model to ignore gender" is not a fairness control. "The model never receives it, and a
+  test proves the text is identical" is.
+- My fairness test caught a leak I would never have spotted by reading output: a pronoun rewrite
+  that produced "them" for women and "their" for men, only when a PDF line wrapped.
+- A CV parser's phone-number regex silently deleted every employment date. Every candidate would
+  have become "experience unknown". Test the boring parts.
 
 ## Screenshots / GIFs to capture
 _(collected during the build)_
