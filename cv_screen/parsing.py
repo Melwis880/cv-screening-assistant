@@ -46,7 +46,10 @@ def _parse_pdf(path: Path) -> str:
 
 def _parse_docx(path: Path) -> str:
     doc = Document(str(path))
-    lines = [p.text for p in doc.paragraphs]
+    lines = []
+    for para in doc.paragraphs:
+        is_list = para.style is not None and "list" in (para.style.name or "").lower()
+        lines.append(f"- {para.text}" if is_list and para.text.strip() else para.text)
     for table in doc.tables:
         for row in table.rows:
             lines.append(" | ".join(cell.text for cell in row.cells))

@@ -3,39 +3,39 @@
 Status legend: `[x]` done, `[ ]` not done. Re-read at the start of each work chunk.
 
 ## Phase 0 – Tracking and skeleton
-- [ ] PROGRESS.md, DECISIONS.md, BUILD_LOG.md created
-- [ ] `pyproject.toml`, package layout (`cv_screen/`), `.env.example`
-- [ ] `screen` CLI entry point stub
+- [x] PROGRESS.md, DECISIONS.md, BUILD_LOG.md created
+- [x] `pyproject.toml`, package layout (`cv_screen/`), `.env.example`
+- [x] `screen` CLI entry point stub
 
 ## Phase 1 – Samples
-- [ ] `job.yaml`: Junior Customer Support Specialist, must-have + nice-to-have criteria
-- [ ] `scripts/generate_samples.py`: ~20 synthetic CVs (PDF + DOCX), clearly fictional, deterministic
-- [ ] Generated files committed under `samples/`
+- [x] `job.yaml`: Junior Customer Support Specialist, must-have + nice-to-have criteria
+- [x] `scripts/generate_samples.py`: ~20 synthetic CVs (PDF + DOCX), clearly fictional, deterministic
+- [x] Generated files committed under `samples/`
 
 ## Phase 2 – Parsing and privacy
-- [ ] PDF/DOCX/TXT to text
-- [ ] Redaction of protected attributes (name, photo, age/DOB, gender, nationality, marital status, address, contact details, gendered pronouns)
+- [x] PDF/DOCX/TXT to text
+- [x] Redaction of protected attributes (name, photo, age/DOB, gender, nationality, marital status, address, contact details, gendered pronouns)
 - [ ] Tests: parsing, redaction
 
 ## Phase 3 – Extraction
-- [ ] Strict schema (skills, experience entries, languages, education, evidence quote per claim)
-- [ ] Claude API extractor (default `claude-haiku-4-5-20251001`, configurable), structured outputs
-- [ ] Mock extractor (`MOCK_LLM=1` / `--mock`) that works offline on the sample format
-- [ ] Evidence verification: every quote must appear in the CV text, else the claim is dropped and flagged
-- [ ] Years of relevant experience computed in code from dated entries
+- [x] Strict schema (skills, experience entries, languages, education, evidence quote per claim)
+- [x] Claude API extractor (default `claude-haiku-4-5-20251001`, configurable), structured outputs
+- [x] Mock extractor (`MOCK_LLM=1` / `--mock`) that works offline on the sample format
+- [x] Evidence verification: every quote must appear in the CV text, else the claim is dropped and flagged
+- [x] Years of relevant experience computed in code from dated entries
 - [ ] Tests: schema validation, real extractor against a fake client, evidence verification, missing info
 
 ## Phase 4 – Matching and ranking
-- [ ] Per-criterion met / partly / not met / unknown with evidence line
-- [ ] Transparent ranking (sort order printed, no hidden score)
+- [x] Per-criterion met / partly / not met / unknown with evidence line
+- [x] Transparent ranking (sort order printed, no hidden score)
 - [ ] Tests: criteria matching, ranking, protected-attribute invariance
 
 ## Phase 5 – Outputs
-- [ ] `shortlist.md` + `shortlist.csv`
-- [ ] One-page summary per candidate
-- [ ] Draft reply email per candidate (not sent)
-- [ ] `run_report.json` with timing, tokens, cost
-- [ ] "Tool recommends, human decides" notice in every output
+- [x] `shortlist.md` + `shortlist.csv`
+- [x] One-page summary per candidate
+- [x] Draft reply email per candidate (not sent): three variants (invite / ask for missing info / decline), tool suggestion labelled
+- [x] `run_report.json` with timing, tokens, cost
+- [x] "Tool recommends, human decides" notice in every output
 
 ## Phase 6 – CI and docs
 - [ ] GitHub Actions: ruff + pytest + mock-mode smoke run
