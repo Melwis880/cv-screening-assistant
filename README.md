@@ -33,7 +33,7 @@ Output goes to `out/` (git-ignored, because it contains personal data):
 |---|---|
 | `out/shortlist.md` | Ranked shortlist in three tiers, criteria table, ranking rule, next steps |
 | `out/shortlist.csv` | Same, one row per candidate, with status and evidence per criterion. Cells starting with `=`, `+`, `-`, `@`, tab or CR get a leading `'`, so CV text such as `=HYPERLINK(...)` opens as text, not as a formula |
-| `out/candidates/<id>.md` | One-page summary: criteria with evidence quotes, extracted profile, questions to ask, warnings |
+| `out/candidates/<id>.md` | `<id>` is the file name plus 8 characters of the file's SHA-256 (e.g. `cv01-94ae5c33`), so `cv01.pdf` and `cv01.docx` never overwrite each other. One-page summary: criteria with evidence quotes, extracted profile, questions to ask, warnings |
 | `out/emails/<id>.md` | Draft reply with three variants (invite / ask for missing info / decline), never sent |
 | `out/run_report.json` | Timing, tokens and cost of the run |
 

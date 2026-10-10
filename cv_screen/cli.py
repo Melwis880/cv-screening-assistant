@@ -10,7 +10,7 @@ import click
 
 from cv_screen.extract import DEFAULT_MODEL, ClaudeExtractor, MockExtractor
 from cv_screen.job import load_job
-from cv_screen.pipeline import run_screening
+from cv_screen.pipeline import DuplicateCandidateError, run_screening
 from cv_screen.report import write_outputs
 
 
@@ -73,8 +73,12 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
 
     click.echo(f"Screening {folder} for '{job.title}' with the {extractor.name} extractor"
                + (f" ({model_name})" if model_name else "") + " ...")
-    result = run_screening(folder, job, extractor, as_of_date, model=model_name, workers=workers)
-    paths = write_outputs(result, out_dir, blind=blind)
+    try:
+        result = run_screening(folder, job, extractor, as_of_date, model=model_name,
+                               workers=workers)
+        paths = write_outputs(result, out_dir, blind=blind)
+    except DuplicateCandidateError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     tiers = {t: sum(1 for c in result.ranked if c.counts.tier == t) for t in "ABC"}
     click.echo(f"Screened {len(result.ranked)} of {len(result.candidates)} CVs in "

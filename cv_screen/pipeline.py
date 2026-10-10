@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -14,6 +16,10 @@ from cv_screen.matching import Counts, count, match_profile, sort_key
 from cv_screen.parsing import ParseError, find_cv_files, parse_file
 from cv_screen.redact import redact
 from cv_screen.schema import CandidateProfile, CriterionResult
+
+
+class DuplicateCandidateError(ValueError):
+    """Two CV files would get the same candidate ID, so one would overwrite the other's output."""
 
 
 @dataclass
@@ -75,18 +81,51 @@ def screen_text(
     return cand
 
 
-def _screen_file(path: Path, job: JobSpec, extractor: Extractor, as_of: date) -> CandidateResult:
+def file_sha256(path: Path) -> str | None:
+    try:
+        with path.open("rb") as fh:
+            return hashlib.file_digest(fh, "sha256").hexdigest()
+    except OSError:
+        return None  # unreadable: parsing reports it and the CV goes to manual review
+
+
+def candidate_id(path: Path, sha256: str | None) -> str:
+    """File stem plus 8 hex digits of the file's SHA-256: two files never share outputs, and the
+    ID is safe as a file name and inside a Markdown link."""
+    stem = re.sub(r"[^\w.-]+", "_", path.stem).strip("_").lstrip("-.")[:60] or "cv"
+    digest = sha256 or hashlib.sha256(path.name.encode()).hexdigest()
+    return f"{stem}-{digest[:8]}"
+
+
+def assign_ids(files: list[Path]) -> list[str]:
+    """IDs for all files, checked for collisions before anything is screened or written."""
+    ids = [candidate_id(f, file_sha256(f)) for f in files]
+    first: dict[str, Path] = {}
+    clashes = []
+    for path, cid in zip(files, ids, strict=True):
+        if cid in first:
+            clashes.append(f"{first[cid].name} and {path.name} (both {cid})")
+        first.setdefault(cid, path)
+    if clashes:
+        raise DuplicateCandidateError(
+            "These CV files would get the same candidate ID (same name and content?): "
+            + "; ".join(clashes) + ". Remove the duplicate and run again. Nothing was screened."
+        )
+    return ids
+
+
+def _screen_file(path: Path, cid: str, job: JobSpec, extractor: Extractor,
+                 as_of: date) -> CandidateResult:
     started = time.perf_counter()
     try:
         text = parse_file(path)
     except ParseError as exc:
-        cand = CandidateResult(path.stem, path.name, None, error=str(exc))
+        cand = CandidateResult(cid, path.name, None, error=str(exc))
     else:
         try:
-            cand = screen_text(path.stem, path.name, text, job, extractor, as_of)
+            cand = screen_text(cid, path.name, text, job, extractor, as_of)
         except Exception as exc:  # one bad CV must not stop the run; it goes to manual review
-            cand = CandidateResult(path.stem, path.name, None,
-                                   error=f"{type(exc).__name__}: {exc}")
+            cand = CandidateResult(cid, path.name, None, error=f"{type(exc).__name__}: {exc}")
     cand.seconds = time.perf_counter() - started
     return cand
 
@@ -100,9 +139,11 @@ def run_screening(
     workers: int = 4,
 ) -> ScreeningRun:
     files = find_cv_files(folder)
+    ids = assign_ids(files)
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        candidates = list(pool.map(lambda f: _screen_file(f, job, extractor, as_of), files))
+        candidates = list(pool.map(lambda f, cid: _screen_file(f, cid, job, extractor, as_of),
+                                   files, ids))
     wall = time.perf_counter() - started
 
     ranked = sorted((c for c in candidates if c.counts is not None),

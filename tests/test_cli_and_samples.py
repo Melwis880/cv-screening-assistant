@@ -7,6 +7,13 @@ from cv_screen.cli import main
 from cv_screen.parsing import find_cv_files, parse_file
 from tests.conftest import ROOT, SAMPLES
 
+
+def _ids_by_stem(out):
+    """Candidate IDs are '<stem>-<sha256 prefix>'; tests refer to candidates by file stem."""
+    rows = csv.DictReader((out / "shortlist.csv").open(encoding="utf-8"))
+    return {r["source_file"].rsplit(".", 1)[0]: r["candidate_id"] for r in rows}
+
+
 # Regression snapshot of the mock-mode demo run (as of 2026-10-01). If the samples or rules
 # change on purpose, update this table.
 EXPECTED_TIERS = {
@@ -41,18 +48,22 @@ def test_cli_mock_run_end_to_end(tmp_path):
 
     rows = list(csv.DictReader((out / "shortlist.csv").open()))
     assert len(rows) == 20
-    tiers = {t: {r["candidate_id"] for r in rows if r["tier"] == t} for t in "ABC"}
+    tiers = {t: {r["source_file"].rsplit(".", 1)[0] for r in rows if r["tier"] == t}
+             for t in "ABC"}
     assert tiers == EXPECTED_TIERS
     assert [r["rank"] for r in rows] == [str(i) for i in range(1, 21)]
-    assert rows[0]["candidate_id"] == "cv01"
+    assert rows[0]["source_file"] == "cv01.pdf"
 
-    for cid in ("cv01", "cv18"):
+    ids = _ids_by_stem(out)
+    for stem in ("cv01", "cv18"):
+        cid = ids[stem]
         summary = (out / "candidates" / f"{cid}.md").read_text()
         assert "recommends, the hiring manager decides" in summary
         email = (out / "emails" / f"{cid}.md").read_text()
         assert "DRAFT ONLY - nothing has been sent" in email
         assert "Variant A" in email and "Variant B" in email and "Variant C" in email
-    assert "variant B (ask for missing information)" in (out / "emails" / "cv18.md").read_text()
+    assert "variant B (ask for missing information)" in (
+        out / "emails" / f"{ids['cv18']}.md").read_text()
 
     report = json.loads((out / "run_report.json").read_text())
     assert report["extractor"] == "mock"
@@ -69,7 +80,8 @@ def test_cli_blind_hides_names(tmp_path):
     ])
     assert result.exit_code == 0, result.output
     assert "Erika Mustermann" not in (out / "shortlist.md").read_text()
-    assert "Erika Mustermann" not in (out / "candidates" / "cv01.md").read_text()
+    assert "Erika Mustermann" not in (
+        out / "candidates" / f"{_ids_by_stem(out)['cv01']}.md").read_text()
     assert "Erika Mustermann" not in (out / "shortlist.csv").read_text()
 
 

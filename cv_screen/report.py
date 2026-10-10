@@ -13,7 +13,7 @@ from cv_screen.job import (
     LanguageCriterion,
 )
 from cv_screen.matching import RANKING_RULE, TIERS
-from cv_screen.pipeline import CandidateResult, ScreeningRun
+from cv_screen.pipeline import CandidateResult, DuplicateCandidateError, ScreeningRun
 
 HUMAN_DECIDES = (
     "**This tool recommends, the hiring manager decides.** Nobody is rejected automatically. "
@@ -26,6 +26,11 @@ FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
 def write_outputs(run: ScreeningRun, out: Path, blind: bool = False) -> dict[str, Path]:
+    ids = [c.candidate_id for c in run.candidates]
+    if len(set(ids)) != len(ids):
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        raise DuplicateCandidateError(
+            f"duplicate candidate IDs {', '.join(dupes)}: nothing was written")
     out.mkdir(parents=True, exist_ok=True)
     (out / "candidates").mkdir(exist_ok=True)
     (out / "emails").mkdir(exist_ok=True)

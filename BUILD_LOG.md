@@ -76,8 +76,8 @@ All on the 20 synthetic CVs, `--as-of 2026-10-01`, in a 4-core cloud container.
 - **Before/after redaction:** `samples/cv14.docx` opened in Word next to the "Removed before
   matching" line and the "They are a patient support agent" sentence (e.g. from a debug print of
   `redact(parse_file(...)).text`).
-- **`out/candidates/cv08.md`:** an `unknown` experience criterion with the quoted role line and the
+- **`out/candidates/cv08-df627b25.md`:** an `unknown` experience criterion with the quoted role line and the
   question "Ask for dates".
-- **`out/emails/cv11.md`:** variant B asking for CEFR levels instead of guessing from "fluent".
+- **`out/emails/cv11-3510f9c6.md`:** variant B asking for CEFR levels instead of guessing from "fluent".
 - **CI run** with the invariance test in the pytest output:
   `pytest -v tests/test_invariance.py`.
