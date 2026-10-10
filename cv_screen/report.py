@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 from cv_screen.fileio import open_private, private_dir, write_private
@@ -50,10 +51,28 @@ def write_outputs(run: ScreeningRun, out: Path, blind: bool = False) -> dict[str
     return paths
 
 
+# Letters (any script), single spaces, ' . - between them: "Anne-Marie O'Neil", "J. R. Smith".
+_NAME_RE = re.compile(r"[^\W\d_]+(?:[ '’.-]+[^\W\d_]+)*\.?")
+_MD_SPECIAL = re.compile(r"([\\<>\[\]()!*_|`])")
+
+
+def safe_name(name: str | None) -> str | None:
+    """The name from the CV, only if it looks like a name; anything else is not shown."""
+    name = (name or "").strip()
+    return name if len(name) <= 80 and _NAME_RE.fullmatch(name) else None
+
+
+def md(text: str) -> str:
+    """Escape applicant- or model-supplied text for Markdown: it can't become a link, image,
+    HTML, emphasis, code span, table cell break or new line."""
+    return _MD_SPECIAL.sub(r"\\\1", re.sub(r"[\r\n]+", " ", text))
+
+
 def _display_name(cand: CandidateResult, blind: bool) -> str:
+    """Safe as-is in Markdown and CSV: a name that passed `safe_name`, or a fixed placeholder."""
     if blind:
         return "(hidden)"
-    return cand.name or "(not found)"
+    return safe_name(cand.name) or "(not found)"
 
 
 def _reasons(cand: CandidateResult) -> str:
@@ -85,10 +104,6 @@ def _question(run: ScreeningRun, criterion_id: str) -> str:
     return f"Your experience with: {c.label[0].lower() + c.label[1:]}"
 
 
-def _md_escape(s: str) -> str:
-    return s.replace("|", "\\|").replace("\n", " ")
-
-
 def shortlist_markdown(run: ScreeningRun, blind: bool) -> str:
     job = run.job
     n_must = len(job.criteria.must_have)
@@ -112,7 +127,7 @@ def shortlist_markdown(run: ScreeningRun, blind: bool) -> str:
     for must, crit in ((True, job.criteria.must_have), (False, job.criteria.nice_to_have)):
         for c in crit:
             kind = "yes" if must else "nice to have"
-            lines.append(f"| {c.id} | {kind} | {_md_escape(c.label)} |")
+            lines.append(f"| {c.id} | {kind} | {md(c.label)} |")
     lines += ["", "## Ranking", ""]
     for tier, title in TIERS.items():
         group = [c for c in run.ranked if c.counts.tier == tier]
@@ -128,17 +143,17 @@ def shortlist_markdown(run: ScreeningRun, blind: bool) -> str:
         for c in group:
             k = c.counts
             lines.append(
-                f"| {c.rank} | [{c.candidate_id}](candidates/{c.candidate_id}.md) "
-                f"| {_md_escape(_display_name(c, blind))} "
+                f"| {c.rank} | [{md(c.candidate_id)}](candidates/{c.candidate_id}.md) "
+                f"| {_display_name(c, blind)} "
                 f"| {k.must_met} (+{k.must_partly} partly) "
                 f"| {k.nice_met} (+{k.nice_partly} partly) "
-                f"| {k.unknown_total} | {_md_escape(_reasons(c))} |"
+                f"| {k.unknown_total} | {md(_reasons(c))} |"
             )
         lines.append("")
     if run.failed:
         lines += ["## Needs manual review (could not be screened)", ""]
         for c in run.failed:
-            lines.append(f"- `{c.source_file}`: {c.error}")
+            lines.append(f"- {md(c.source_file)}: {md(c.error or '')}")
         lines.append("")
     lines += [
         "## Next steps for the manager",
@@ -185,15 +200,15 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
 
 def candidate_summary(run: ScreeningRun, cand: CandidateResult, blind: bool) -> str:
     lines = [
-        f"# {cand.candidate_id}: summary for {run.job.title}",
+        f"# {md(cand.candidate_id)}: summary for {run.job.title}",
         "",
         f"> {HUMAN_DECIDES}",
         "",
-        f"- Source file: `{cand.source_file}`",
+        f"- Source file: {md(cand.source_file)}",
         f"- Name (not used for matching): {_display_name(cand, blind)}",
     ]
     if cand.counts is None:
-        lines += ["", f"**Could not be screened:** {cand.error}", "",
+        lines += ["", f"**Could not be screened:** {md(cand.error or '')}", "",
                   "Please read this CV manually.", ""]
         return "\n".join(lines)
     k = cand.counts
@@ -212,36 +227,37 @@ def candidate_summary(run: ScreeningRun, cand: CandidateResult, blind: bool) -> 
         "|---|---|---|---|---|",
     ]
     for r in cand.results:
-        ev = f'"{_md_escape(r.evidence)}"' if r.evidence else "-"
-        lines.append(f"| {_md_escape(r.label)} | {'yes' if r.must_have else 'no'} "
-                     f"| **{SYMBOL[r.status]}** | {ev} | {_md_escape(r.note)} |")
+        ev = f'"{md(r.evidence)}"' if r.evidence else "-"
+        lines.append(f"| {md(r.label)} | {'yes' if r.must_have else 'no'} "
+                     f"| **{SYMBOL[r.status]}** | {ev} | {md(r.note)} |")
     e = p.extraction
     lines += ["", "## Extracted profile", ""]
     lines.append("- Roles: " + ("; ".join(
-        f"{x.title} ({x.start or '?'} to {x.end or '?'}{', relevant' if x.relevant_to_job else ''})"
+        f"{md(x.title)} ({md(x.start or '?')} to {md(x.end or '?')}"
+        f"{', relevant' if x.relevant_to_job else ''})"
         for x in e.experience) or "none found"))
     lines.append("- Languages: " + (", ".join(
-        f"{x.language} {x.level or (x.level_as_written or 'level not given')}"
+        f"{md(x.language)} {md(x.level or (x.level_as_written or 'level not given'))}"
         for x in e.languages) or "none found"))
     lines.append("- Education: " + ("; ".join(
         f"{x.level}{' (in progress)' if x.in_progress else ''}"
-        + (f", {x.field}" if x.field else "")
+        + (f", {md(x.field)}" if x.field else "")
         for x in e.education) or "none found"))
-    lines.append("- Skills: " + (", ".join(x.name for x in e.skills) or "none found"))
+    lines.append("- Skills: " + (", ".join(md(x.name) for x in e.skills) or "none found"))
 
     questions = [r for r in cand.results if r.status in ("unknown", "partly")]
     if questions:
         lines += ["", "## Questions to ask before deciding", ""]
         for r in questions:
-            lines.append(f"- {r.label}: {r.note}")
+            lines.append(f"- {md(r.label)}: {md(r.note)}")
     if cand.flags or p.dropped_claims or p.warnings:
         lines += ["", "## Warnings", ""]
         for f in cand.flags:
-            lines.append(f"- **{f}**")
+            lines.append(f"- **{md(f)}**")
         for d in p.dropped_claims:
-            lines.append(f"- Dropped unverified claim: {d}")
+            lines.append(f"- Dropped unverified claim: {md(d)}")
         for wmsg in p.warnings:
-            lines.append(f"- {wmsg}")
+            lines.append(f"- {md(wmsg)}")
     removed = ", ".join(f"{k_}: {v}" for k_, v in sorted(cand.removed.items())) or "nothing found"
     lines += ["", f"_Removed before matching: {removed}._", ""]
     return "\n".join(lines)
@@ -261,11 +277,12 @@ def suggested_variant(cand: CandidateResult) -> str:
 def email_draft(run: ScreeningRun, cand: CandidateResult) -> str:
     title = run.job.title
     company = run.job.company.split("(")[0].strip() or "our company"
-    greeting = f"Dear {cand.name}," if cand.name else "Dear applicant,"
+    name = safe_name(cand.name)  # letters, spaces and ' . - only: safe in the email text
+    greeting = f"Dear {name}," if name else "Dear applicant,"
     unknowns = [r for r in cand.results if r.must_have and r.status in ("unknown", "partly")]
     questions = "\n".join(f"- {_question(run, r.criterion_id)}" for r in unknowns)
     questions = questions or "- [add your question]"
-    return f"""# Email drafts for {cand.candidate_id} (`{cand.source_file}`)
+    return f"""# Email drafts for {md(cand.candidate_id)} ({md(cand.source_file)})
 
 > DRAFT ONLY - nothing has been sent. Pick one variant, edit it, and send it yourself.
 > Tool suggestion: variant {suggested_variant(cand)}. The decision is yours.

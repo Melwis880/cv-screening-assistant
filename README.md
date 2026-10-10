@@ -37,6 +37,13 @@ Output goes to `out/` (git-ignored, because it contains personal data):
 | `out/emails/<id>.md` | Draft reply with three variants (invite / ask for missing info / decline), never sent |
 | `out/run_report.json` | Timing, tokens and cost of the run |
 
+The Markdown files are meant to be viewed rendered (VS Code preview, GitHub, any Markdown
+viewer). Text that comes from a CV or from the model is escaped (`< > [ ] ( ) ! * _ \ | ``),
+so it can never become a link, image, HTML or formatting; in a plain-text editor you will see
+backslashes before those characters. A name is shown only if it looks like a name (letters of
+any script, spaces, `'`, `.`, `-`); anything else shows as "(not found)" and the email draft
+says "Dear applicant,".
+
 If `screen` clashes with GNU screen on your machine, use `python -m cv_screen run ...`.
 
 ## Architecture

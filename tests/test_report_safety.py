@@ -87,3 +87,74 @@ def test_outputs_do_not_follow_planted_symlinks(hostile_run, tmp_path):
     with pytest.raises(OSError):
         write_outputs(hostile_run, out)
     assert target.read_text() == "keep me"
+
+
+MARKUP_CV = """Name: <img src=x onerror=alert(1)> [click](//evil.example/n)
+Experience
+Customer Service Agent [click](//evil.example/x), Example Shop - 03/2022 - present
+- Answered customer emails
+Languages
+German: native
+English: C1
+Skills
+<b>Zendesk</b>, ![pixel](//evil.example/p.png), live chat, `code`, *bold*, a|b
+"""
+RAW_MARKUP = ["<img", "<b>", "](//evil", "![pixel", "`code`", "*bold*", "a|b", "[y](z)",
+              "[broken](evil"]
+
+
+@pytest.fixture
+def markup_outputs(tmp_path, job, as_of):
+    folder = tmp_path / "cvs"
+    folder.mkdir()
+    (folder / "cv `x` [y](z).txt").write_text(MARKUP_CV, encoding="utf-8")
+    (folder / "[broken](evil.example).pdf").write_bytes(b"%PDF-1.4 garbage")
+    run = run_screening(folder, job, MockExtractor(), as_of)
+    out = tmp_path / "out"
+    write_outputs(run, out)
+    return run, out
+
+
+def test_markdown_outputs_escape_applicant_and_model_text(markup_outputs):
+    _, out = markup_outputs
+    files = [out / "shortlist.md", *(out / "candidates").iterdir(), *(out / "emails").iterdir()]
+    assert len(files) == 5
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        for raw in RAW_MARKUP:
+            assert raw not in text, (f.name, raw)
+    shortlist = (out / "shortlist.md").read_text(encoding="utf-8")
+    summary = next((out / "candidates").glob("cv_x_y_z-*.md")).read_text(encoding="utf-8")
+    assert "\\<b\\>Zendesk\\</b\\>" in summary  # still readable, just inert
+    assert "\\[broken\\]\\(evil.example\\).pdf" in shortlist
+
+
+@pytest.mark.parametrize("name,shown", [
+    ("Erika Mustermann", "Erika Mustermann"),
+    ("Anne-Marie O'Neil", "Anne-Marie O'Neil"),
+    ("Zoë Ångström-Øberg", "Zoë Ångström-Øberg"),
+    ("J. R. Smith Jr.", "J. R. Smith Jr."),
+    ("<img src=x>", None),
+    ("=HYPERLINK(1)", None),
+    ("Robert'); DROP TABLE", None),
+    ("Agent 47", None),
+    ("x" * 81, None),
+])
+def test_only_name_like_names_are_shown(name, shown, tmp_path, job, as_of):
+    folder = tmp_path / "cvs"
+    folder.mkdir()
+    (folder / "cv.txt").write_text(f"Name: {name}\nSkills\n- Excel, live chat\n",
+                                   encoding="utf-8")
+    run = run_screening(folder, job, MockExtractor(), as_of)
+    out = tmp_path / "out"
+    write_outputs(run, out)
+    cid = run.candidates[0].candidate_id
+    summary = (out / "candidates" / f"{cid}.md").read_text(encoding="utf-8")
+    email = (out / "emails" / f"{cid}.md").read_text(encoding="utf-8")
+    row = next(csv.DictReader((out / "shortlist.csv").open(encoding="utf-8")))
+    if shown:
+        assert f"Name (not used for matching): {shown}" in summary
+        assert f"Dear {shown}," in email and row["name"] == shown
+    else:
+        assert "Name (not used for matching): (not found)" in summary
+        assert "Dear applicant," in email and row["name"] == "(not found)"
