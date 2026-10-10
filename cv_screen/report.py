@@ -21,6 +21,8 @@ HUMAN_DECIDES = (
     "removed before matching. Check the evidence quotes before acting on any line below."
 )
 SYMBOL = {"met": "met", "partly": "partly", "not met": "NOT met", "unknown": "unknown"}
+# Spreadsheet apps evaluate a cell that starts with one of these as a formula.
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
 def write_outputs(run: ScreeningRun, out: Path, blind: bool = False) -> dict[str, Path]:
@@ -142,6 +144,13 @@ def shortlist_markdown(run: ScreeningRun, blind: bool) -> str:
     return "\n".join(line for line in lines if line is not None) + "\n"
 
 
+def csv_cell(value: object) -> object:
+    """Make a cell inert in Excel/LibreOffice: CV text like =HYPERLINK(...) stays text."""
+    if isinstance(value, str) and value.startswith(FORMULA_START):
+        return "'" + value
+    return value
+
+
 def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
     crit_ids = [c.id for c in run.job.criteria.must_have + run.job.criteria.nice_to_have]
     header = ["rank", "candidate_id", "name", "source_file", "tier", "must_met", "must_partly",
@@ -163,7 +172,7 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
             years = c.profile.years_relevant_experience if c.profile else None
             row += ["" if years is None else years,
                     " / ".join(c.profile.dropped_claims) if c.profile else "", c.error or ""]
-            w.writerow(row)
+            w.writerow([csv_cell(v) for v in row])
 
 
 def candidate_summary(run: ScreeningRun, cand: CandidateResult, blind: bool) -> str:

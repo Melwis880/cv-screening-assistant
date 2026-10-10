@@ -32,7 +32,7 @@ Output goes to `out/` (git-ignored, because it contains personal data):
 | File | What it is |
 |---|---|
 | `out/shortlist.md` | Ranked shortlist in three tiers, criteria table, ranking rule, next steps |
-| `out/shortlist.csv` | Same, one row per candidate, with status and evidence per criterion |
+| `out/shortlist.csv` | Same, one row per candidate, with status and evidence per criterion. Cells starting with `=`, `+`, `-`, `@`, tab or CR get a leading `'`, so CV text such as `=HYPERLINK(...)` opens as text, not as a formula |
 | `out/candidates/<id>.md` | One-page summary: criteria with evidence quotes, extracted profile, questions to ask, warnings |
 | `out/emails/<id>.md` | Draft reply with three variants (invite / ask for missing info / decline), never sent |
 | `out/run_report.json` | Timing, tokens and cost of the run |

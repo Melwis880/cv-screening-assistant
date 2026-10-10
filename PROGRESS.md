@@ -55,7 +55,7 @@ Status legend: `[x]` done, `[ ]` not done. Re-read at the start of each work chu
 Findings from the `/security-audit` of this branch. Each fix has a test that fails on the old code
 where the issue can be reproduced.
 - [x] Evidence must prove the claim: min quote length, claim value inside its own quote, CV text escaped in the prompt
-- [ ] CSV formula injection: escape every string cell in `shortlist.csv`
+- [x] CSV formula injection: escape every string cell in `shortlist.csv`
 - [ ] Unique candidate IDs (stem + short SHA-256), fail before writing output if IDs collide
 - [ ] Input limits (file size, PDF pages, DOCX unpacked size, text length) -> manual review, configurable
 - [ ] Flag PDFs with hidden text (white, invisible, tiny or off-page)
