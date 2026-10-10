@@ -340,10 +340,11 @@ def run_report(run: ScreeningRun) -> dict:
         "tiers": {t: sum(1 for c in run.ranked if c.counts.tier == t) for t in ("A", "B", "C")},
         "dropped_claims": sum(len(c.profile.dropped_claims) for c in run.ranked),
         "file_warnings": sum(len(c.flags) for c in run.candidates),
+        "cache_hits": run.cache_hits,
         "per_cv": [
             {"candidate_id": c.candidate_id, "seconds": round(c.seconds, 3),
              "input_tokens": c.usage.input_tokens, "output_tokens": c.usage.output_tokens,
-             "error": c.error, "file_warnings": c.flags}
+             "cached": c.cached, "error": c.error, "file_warnings": c.flags}
             for c in run.candidates
         ],
     }

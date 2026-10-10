@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from cv_screen.cache import ExtractionCache
 from cv_screen.extract import ExtractionError, Extractor, Usage, build_profile
 from cv_screen.job import JobSpec
 from cv_screen.matching import Counts, count, match_profile, sort_key
@@ -37,6 +38,7 @@ class CandidateResult:
     seconds: float = 0.0
     rank: int | None = None
     flags: list[str] = field(default_factory=list)  # file warnings, e.g. hidden PDF text
+    cached: bool = False  # extraction reused from the cache, no API call
 
 
 @dataclass
@@ -57,6 +59,10 @@ class ScreeningRun:
     def failed(self) -> list[CandidateResult]:
         return [c for c in self.candidates if c.counts is None]
 
+    @property
+    def cache_hits(self) -> int:
+        return sum(1 for c in self.candidates if c.cached)
+
 
 def screen_text(
     candidate_id: str,
@@ -65,15 +71,29 @@ def screen_text(
     job: JobSpec,
     extractor: Extractor,
     as_of: date,
+    cache: ExtractionCache | None = None,
+    file_sha256: str | None = None,
 ) -> CandidateResult:
     """Screen one CV given as text. Protected attributes are removed first."""
     red = redact(text)
     cand = CandidateResult(candidate_id, source_file, red.name, red.text, red.removed)
-    try:
-        extraction, usage = extractor.extract(red.text, job)
-    except ExtractionError as exc:
-        cand.error = f"extraction failed: {exc}"
-        return cand
+    identity = getattr(extractor, "cache_identity", None)
+    key = (cache.key(file_sha256, red.text, identity(job))
+           if cache is not None and file_sha256 and identity else None)
+    extraction = cache.get(key) if key else None
+    if extraction is not None:
+        cand.cached, usage = True, Usage()
+    else:
+        try:
+            extraction, usage = extractor.extract(red.text, job)
+        except ExtractionError as exc:
+            cand.error = f"extraction failed: {exc}"
+            return cand
+        if key:
+            try:
+                cache.put(key, extraction)
+            except OSError:
+                pass  # the cache only saves money; a failed write must not fail the CV
     cand.usage = usage
     cand.profile = build_profile(candidate_id, source_file, red.text, extraction, as_of,
                                  relevance_keywords=job.relevant_experience.keywords)
@@ -102,10 +122,11 @@ def candidate_id(path: Path, sha256: str | None) -> str:
     return f"{stem}-{digest[:8]}"
 
 
-def assign_ids(files: list[Path], limits: Limits | None = None) -> list[str]:
-    """IDs for all files, checked for collisions before anything is screened or written."""
+def assign_ids(files: list[Path], limits: Limits | None = None) -> list[tuple[str, str | None]]:
+    """(ID, SHA-256) for all files, checked for collisions before anything is screened."""
     max_bytes = (limits or Limits()).max_file_bytes
-    ids = [candidate_id(f, file_sha256(f, max_bytes)) for f in files]
+    shas = [file_sha256(f, max_bytes) for f in files]
+    ids = [candidate_id(f, sha) for f, sha in zip(files, shas, strict=True)]
     first: dict[str, Path] = {}
     clashes = []
     for path, cid in zip(files, ids, strict=True):
@@ -117,11 +138,11 @@ def assign_ids(files: list[Path], limits: Limits | None = None) -> list[str]:
             "These CV files would get the same candidate ID (same name and content?): "
             + "; ".join(clashes) + ". Remove the duplicate and run again. Nothing was screened."
         )
-    return ids
+    return list(zip(ids, shas, strict=True))
 
 
-def _screen_file(path: Path, cid: str, job: JobSpec, extractor: Extractor,
-                 as_of: date, limits: Limits) -> CandidateResult:
+def _screen_file(path: Path, cid: str, sha: str | None, job: JobSpec, extractor: Extractor,
+                 as_of: date, limits: Limits, cache: ExtractionCache | None) -> CandidateResult:
     started = time.perf_counter()
     try:
         parsed = parse_cv(path, limits)
@@ -129,7 +150,7 @@ def _screen_file(path: Path, cid: str, job: JobSpec, extractor: Extractor,
         cand = CandidateResult(cid, path.name, None, error=str(exc))
     else:
         try:
-            cand = screen_text(cid, path.name, parsed.text, job, extractor, as_of)
+            cand = screen_text(cid, path.name, parsed.text, job, extractor, as_of, cache, sha)
         except Exception as exc:  # one bad CV must not stop the run; it goes to manual review
             cand = CandidateResult(cid, path.name, None, error=f"{type(exc).__name__}: {exc}")
         cand.flags = parsed.warnings
@@ -145,14 +166,18 @@ def run_screening(
     model: str | None = None,
     workers: int = 4,
     limits: Limits | None = None,
+    cache: ExtractionCache | None = None,
 ) -> ScreeningRun:
     limits = limits or Limits()
     files = find_cv_files(folder)
     ids = assign_ids(files, limits)
+    if cache is not None:
+        cache.purge_expired()
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         candidates = list(pool.map(
-            lambda f, cid: _screen_file(f, cid, job, extractor, as_of, limits), files, ids))
+            lambda f, id_sha: _screen_file(f, *id_sha, job, extractor, as_of, limits, cache),
+            files, ids))
     wall = time.perf_counter() - started
 
     ranked = sorted((c for c in candidates if c.counts is not None),

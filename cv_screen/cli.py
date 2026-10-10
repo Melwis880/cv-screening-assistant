@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from cv_screen.cache import DEFAULT_TTL_DAYS, ExtractionCache
 from cv_screen.extract import DEFAULT_MODEL, ClaudeExtractor, MockExtractor
 from cv_screen.job import load_job
 from cv_screen.parsing import Limits
@@ -60,9 +61,17 @@ def main() -> None:
               help="PDFs with more pages go to manual review.")
 @click.option("--max-chars", default=Limits.max_chars, show_default=True, type=int,
               help="CVs with more text go to manual review and are not sent to the model.")
+@click.option("--cache/--no-cache", "use_cache", default=None,
+              help="Reuse extraction results of unchanged CVs from earlier runs. "
+                   "Default: on in real mode, off in mock mode.")
+@click.option("--cache-dir", type=click.Path(path_type=Path), default=None,
+              help="Default: OUT/.cache/extractions (owner-only).")
+@click.option("--cache-ttl-days", type=float, default=DEFAULT_TTL_DAYS, show_default=True,
+              help="Older cache entries are deleted at the start of a run.")
 def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: str | None,
         as_of: str | None, blind: bool, workers: int, max_file_mb: float, max_pages: int,
-        max_chars: int) -> None:
+        max_chars: int, use_cache: bool | None, cache_dir: Path | None,
+        cache_ttl_days: float) -> None:
     """Screen every PDF/DOCX/TXT CV in FOLDER against the job and write a ranked shortlist."""
     job = load_job(job_path)
     if mock is None:
@@ -83,8 +92,12 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
                + (f" ({model_name})" if model_name else "") + " ...")
     try:
         limits = Limits(max_file_mb=max_file_mb, max_pdf_pages=max_pages, max_chars=max_chars)
+        cache = None
+        if (not mock) if use_cache is None else use_cache:
+            cache = ExtractionCache(cache_dir or out_dir / ".cache" / "extractions",
+                                    ttl_days=cache_ttl_days)
         result = run_screening(folder, job, extractor, as_of_date, model=model_name,
-                               workers=workers, limits=limits)
+                               workers=workers, limits=limits, cache=cache)
         paths = write_outputs(result, out_dir, blind=blind)
     except DuplicateCandidateError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -93,6 +106,9 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
     click.echo(f"Screened {len(result.ranked)} of {len(result.candidates)} CVs in "
                f"{result.wall_seconds:.1f}s. Tier A: {tiers['A']}, B: {tiers['B']}, "
                f"C: {tiers['C']}, manual review: {len(result.failed)}.")
+    if cache is not None:
+        click.echo(f"Cache: {result.cache_hits} of {len(result.candidates)} CVs reused from the "
+                   f"cache (no API call); entries older than {cache_ttl_days:g} days are deleted.")
     if result.usage.input_tokens:
         cost = result.usage.cost_usd
         click.echo(f"Tokens: {result.usage.input_tokens} in / {result.usage.output_tokens} out"

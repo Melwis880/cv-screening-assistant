@@ -73,6 +73,7 @@ the reasoning behind each choice.
 | `cv_screen/matching.py` | Criterion rules, tiers, sort key |
 | `cv_screen/pipeline.py` | Runs every CV (in parallel threads), failures go to manual review |
 | `cv_screen/report.py` | Markdown, CSV, summaries, email drafts, run report |
+| `cv_screen/cache.py` | Extraction cache: validated results by file SHA-256, owner-only, TTL |
 | `cv_screen/fileio.py` | Owner-only output files (folders 0700, files 0600, no symlink following) |
 | `cv_screen/cli.py` | `screen run` |
 
@@ -92,6 +93,9 @@ screen run FOLDER --job job.yaml [options]
   --max-file-mb MB    larger files go to manual review unread (default: 5)
   --max-pages N       PDFs with more pages go to manual review (default: 10)
   --max-chars N       CVs with more text go to manual review, not to the model (default: 30000)
+  --cache / --no-cache   reuse extraction results of unchanged CVs (default: on in real mode)
+  --cache-dir PATH       default: OUT/.cache/extractions
+  --cache-ttl-days N     cache entries older than this are deleted (default: 30)
 ```
 
 Input limits protect against oversized or hostile uploads (cost, memory, zip bombs). A CV over
@@ -186,8 +190,18 @@ printed at the top of every shortlist.
   symlinks, so other users on a shared machine cannot read it. It is git-ignored. Delete it when the
   opening is closed, within the retention period your local rules set (under GDPR, only as
   long as needed for the hiring decision and possible legal claims, unless the candidate agrees
-  to longer storage; this is not legal advice). The tool itself keeps no database and no
-  cache.
+  to longer storage; this is not legal advice). The tool keeps no database.
+- **Extraction cache (real mode).** To avoid paying again for CVs it has already read (the n8n
+  flow re-screens the whole folder on every new file), the tool stores each validated
+  extraction result in `out/.cache/extractions/`: the skills, roles, languages and education
+  found in the CV, each with a quote from the *redacted* text. Names and contact details are
+  redacted before extraction, but a quote can contain anything the redaction missed, so treat
+  the cache as personal data. Entries are keyed by the file's SHA-256, the redacted text and
+  the model/prompt/job, so a changed CV, model or job is extracted again; failed extractions
+  are never cached; files are owner-only (0600 in a 0700 folder); invalid entries are ignored.
+  Entries older than `--cache-ttl-days` (default 30) are deleted at the start of each run.
+  Deleting `out/` deletes the cache; `--no-cache` turns it off. Mock mode does not cache
+  unless you pass `--cache`.
 - No real CVs are in this repository. `scripts/generate_samples.py` regenerates the
   fictional samples byte-for-byte.
 

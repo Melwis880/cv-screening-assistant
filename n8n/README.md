@@ -24,7 +24,9 @@ and a *Write Binary File* node that saves attachments into the watched folder.
 
 - The output folder contains personal data; keep it on the same machine and delete it when
   the opening is closed.
-- Each run re-screens the whole folder (cheap: estimated under $0.01 per CV with the default
-  model). Ranks can shift as new CVs arrive; a candidate's tier and criteria do not.
+- Each run re-screens the whole folder, but unchanged CVs come from the extraction cache in
+  `/data/screening/junior-support/.cache/extractions` (owner-only, entries deleted after 30
+  days), so only new or changed CVs are sent to the API. Ranks can shift as new CVs arrive; a
+  candidate's tier and criteria do not.
 - Status: the JSON follows the n8n workflow export format but has **not been tested against a
   live n8n instance** in this repo's build. Check node versions after import.

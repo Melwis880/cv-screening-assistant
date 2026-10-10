@@ -11,6 +11,7 @@ that text and contains the claimed value, and computes years of relevant experie
 from __future__ import annotations
 
 import functools
+import hashlib
 import html
 import json
 import re
@@ -141,6 +142,12 @@ class ClaudeExtractor:
         self.max_tokens = max_tokens
         self.schema = extraction_json_schema()
 
+    def cache_identity(self, job: JobSpec) -> str:
+        """Everything besides the CV text that decides the result (for the extraction cache)."""
+        parts = [self.model, self.max_tokens, SYSTEM_PROMPT, self.schema,
+                 build_user_message("", job)]
+        return "claude:" + hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
+
     def extract(self, cv_text: str, job: JobSpec) -> tuple[Extraction, Usage]:
         response = self.client.messages.create(
             model=self.model,
@@ -217,6 +224,10 @@ class MockExtractor:
     """Offline rule-based extractor for CVs laid out like the samples. No LLM involved."""
 
     name = "mock"
+    version = 2  # bump when the rules change, so cached mock results are not reused
+
+    def cache_identity(self, job: JobSpec) -> str:
+        return f"mock:{self.version}:" + json.dumps(job.relevant_experience.keywords)
 
     def extract(self, cv_text: str, job: JobSpec) -> tuple[Extraction, Usage]:
         sections = _split_sections(cv_text)
