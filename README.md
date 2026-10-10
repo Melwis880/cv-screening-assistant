@@ -200,7 +200,7 @@ printed at the top of every shortlist.
 **Data handling and retention**
 
 - Everything runs locally except the extraction call in real mode, which sends redacted CV
-  text to the Anthropic API under your own API key and your organisation's data retention
+  text (redaction is best-effort, see Limitations) to the Anthropic API under your own API key and your organisation's data retention
   settings with Anthropic. Mock mode sends nothing anywhere.
 - Output in `out/` contains names and CV content. It is created owner-only (folders 0700,
   files 0600, whatever the umask; existing files are tightened) and written without following
@@ -224,10 +224,16 @@ printed at the top of every shortlist.
 
 ## Limitations
 
-- **Redaction is pattern-based.** It covers labelled fields, the name line, contact details,
-  pronouns and titles. It does not catch every proxy: graduation and employment years hint at
-  age, school or club names can hint at origin or gender, and "native" language can hint at
-  nationality. Read the redacted text in the summaries if you are unsure.
+- **Redaction is best-effort, not a guarantee.** It is a set of regular expressions. It removes
+  labelled fields (`Name:`, `Date of birth:`, `Nationality:`, `Address:` and similar), email
+  addresses, phone numbers, URLs, gendered pronouns and titles. It finds the **name only from
+  a `Name:` label or from the first line of the CV** (after a "CV"/"Résumé" heading) when that
+  line looks like a name. A name placed elsewhere (below a headline, in a sidebar, in the file
+  name), an unlabelled address or birth date in free text, or an unusual layout is not removed,
+  and in real mode it is sent to the model with the rest of the text. It also cannot remove
+  proxies: graduation and employment years hint at age, school or club names at origin or
+  gender, a native language at nationality. Check "Removed before matching" in each summary,
+  and assume some personal data can reach the API.
 - **Hidden text is flagged, not removed.** Text a reader cannot see (white on a page without a
   coloured background, invisible render mode, under 1 pt, or outside the page) is still
   extracted, because the same signals also match the text layer of a scanned CV. When a PDF

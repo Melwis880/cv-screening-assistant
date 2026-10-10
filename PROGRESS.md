@@ -66,7 +66,7 @@ where the issue can be reproduced.
 - [x] Markdown escaping of applicant/model strings; strict name pattern
 - [x] `.env` loader allowlist
 - [x] Control/format characters stripped from applicant strings printed by the CLI
-- [ ] README: redaction is best-effort; IMAP attachments saved under generated names
+- [x] README: redaction is best-effort; IMAP attachments saved under generated names
 - [ ] BUILD_LOG "Security review" section, DECISIONS entries
 - Out of scope (agreed): SHA-pinning GitHub Actions, a lockfile.
 

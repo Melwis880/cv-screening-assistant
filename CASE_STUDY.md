@@ -81,7 +81,8 @@ normalises it to one opening.
 
 ## Limits worth saying out loud
 
-- Redaction is pattern-based. Dates still hint at age; school names can hint at origin.
+- Redaction is best-effort: regular expressions, with the name taken only from a `Name:`
+  label or the CV's first line. Dates still hint at age; school names can hint at origin.
 - The model can still misread a CV. Quote verification catches invented quotes and quotes
   that do not show the claimed value, not every wrong interpretation of a real one, which is
   why the summary shows the quote.

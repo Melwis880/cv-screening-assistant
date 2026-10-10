@@ -18,7 +18,14 @@ stay in the output folder for the manager to edit and send.
 4. Activate the workflow.
 
 To use an inbox instead of a folder, replace the trigger with an *Email Trigger (IMAP)* node
-and a *Write Binary File* node that saves attachments into the watched folder.
+and a *Write Binary File* node that saves attachments into the watched folder. **Save each
+attachment under a generated name, never under the applicant's file name:** a UUID (for
+example from a *Crypto* node, action *Generate*, type *UUID*) plus the extension, and only if
+the extension is on a whitelist (`.pdf`, `.docx`, `.txt`); skip every other attachment. An
+attachment name is chosen by the sender and can contain `../` (writing outside the folder),
+start with a dot (hidden from screening), overwrite another applicant's file, or carry
+terminal and markup tricks. Keep the original name and the sender's address only in your
+mailbox, not in the screening folder.
 
 ## Notes
 
