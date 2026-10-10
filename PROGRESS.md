@@ -57,7 +57,7 @@ where the issue can be reproduced.
 - [x] Evidence must prove the claim: min quote length, claim value inside its own quote, CV text escaped in the prompt
 - [x] CSV formula injection: escape every string cell in `shortlist.csv`
 - [x] Unique candidate IDs (stem + short SHA-256), fail before writing output if IDs collide
-- [ ] Input limits (file size, PDF pages, DOCX unpacked size, text length) -> manual review, configurable
+- [x] Input limits (file size, PDF pages, DOCX unpacked size, text length) -> manual review, configurable
 - [ ] Flag PDFs with hidden text (white, invisible, tiny or off-page)
 - [ ] Output folder 0700, files 0600 regardless of umask
 - [ ] Extraction cache by file SHA-256 (validated results only, owner-only, TTL)

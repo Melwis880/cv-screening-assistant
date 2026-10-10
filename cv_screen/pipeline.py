@@ -13,7 +13,7 @@ from pathlib import Path
 from cv_screen.extract import ExtractionError, Extractor, Usage, build_profile
 from cv_screen.job import JobSpec
 from cv_screen.matching import Counts, count, match_profile, sort_key
-from cv_screen.parsing import ParseError, find_cv_files, parse_file
+from cv_screen.parsing import Limits, ParseError, find_cv_files, parse_file
 from cv_screen.redact import redact
 from cv_screen.schema import CandidateProfile, CriterionResult
 
@@ -81,12 +81,16 @@ def screen_text(
     return cand
 
 
-def file_sha256(path: Path) -> str | None:
+def file_sha256(path: Path, max_bytes: int | None = None) -> str | None:
+    """SHA-256 of the file, or None if it is unreadable or over `max_bytes` (parsing reports
+    either, and the CV goes to manual review)."""
     try:
+        if max_bytes is not None and path.stat().st_size > max_bytes:
+            return None
         with path.open("rb") as fh:
             return hashlib.file_digest(fh, "sha256").hexdigest()
     except OSError:
-        return None  # unreadable: parsing reports it and the CV goes to manual review
+        return None
 
 
 def candidate_id(path: Path, sha256: str | None) -> str:
@@ -97,9 +101,10 @@ def candidate_id(path: Path, sha256: str | None) -> str:
     return f"{stem}-{digest[:8]}"
 
 
-def assign_ids(files: list[Path]) -> list[str]:
+def assign_ids(files: list[Path], limits: Limits | None = None) -> list[str]:
     """IDs for all files, checked for collisions before anything is screened or written."""
-    ids = [candidate_id(f, file_sha256(f)) for f in files]
+    max_bytes = (limits or Limits()).max_file_bytes
+    ids = [candidate_id(f, file_sha256(f, max_bytes)) for f in files]
     first: dict[str, Path] = {}
     clashes = []
     for path, cid in zip(files, ids, strict=True):
@@ -115,10 +120,10 @@ def assign_ids(files: list[Path]) -> list[str]:
 
 
 def _screen_file(path: Path, cid: str, job: JobSpec, extractor: Extractor,
-                 as_of: date) -> CandidateResult:
+                 as_of: date, limits: Limits) -> CandidateResult:
     started = time.perf_counter()
     try:
-        text = parse_file(path)
+        text = parse_file(path, limits)
     except ParseError as exc:
         cand = CandidateResult(cid, path.name, None, error=str(exc))
     else:
@@ -137,13 +142,15 @@ def run_screening(
     as_of: date,
     model: str | None = None,
     workers: int = 4,
+    limits: Limits | None = None,
 ) -> ScreeningRun:
+    limits = limits or Limits()
     files = find_cv_files(folder)
-    ids = assign_ids(files)
+    ids = assign_ids(files, limits)
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        candidates = list(pool.map(lambda f, cid: _screen_file(f, cid, job, extractor, as_of),
-                                   files, ids))
+        candidates = list(pool.map(
+            lambda f, cid: _screen_file(f, cid, job, extractor, as_of, limits), files, ids))
     wall = time.perf_counter() - started
 
     ranked = sorted((c for c in candidates if c.counts is not None),

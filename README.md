@@ -88,7 +88,14 @@ screen run FOLDER --job job.yaml [options]
   --as-of YYYY-MM-DD  count experience up to this date (default: today)
   --blind             hide names in shortlist and summaries as well
   --workers N         parallel API calls (default: 4)
+  --max-file-mb MB    larger files go to manual review unread (default: 5)
+  --max-pages N       PDFs with more pages go to manual review (default: 10)
+  --max-chars N       CVs with more text go to manual review, not to the model (default: 30000)
 ```
+
+Input limits protect against oversized or hostile uploads (cost, memory, zip bombs). A CV over
+a limit is never rejected: it is listed under "Needs manual review" with the reason. DOCX files
+that unpack to more than 50 MB are treated the same way.
 
 ### Environment (`.env`, see [`.env.example`](.env.example))
 
@@ -124,7 +131,8 @@ criteria:
 Criterion types: `language`, `language_any`, `experience_years`, `skill`, `education`
 (`secondary < vocational < bachelor < master < doctorate`). `relevant_experience.description`
 is given to the model to decide which roles count; `relevant_experience.keywords` is used by
-the mock extractor.
+the mock extractor and by the evidence check: a role only counts as relevant if its quote
+contains one of these keywords.
 
 ### Ranking rule (no hidden score)
 

@@ -10,6 +10,7 @@ import click
 
 from cv_screen.extract import DEFAULT_MODEL, ClaudeExtractor, MockExtractor
 from cv_screen.job import load_job
+from cv_screen.parsing import Limits
 from cv_screen.pipeline import DuplicateCandidateError, run_screening
 from cv_screen.report import write_outputs
 
@@ -53,8 +54,15 @@ def main() -> None:
 @click.option("--blind", is_flag=True,
               help="Hide candidate names in the shortlist and summaries too.")
 @click.option("--workers", default=4, show_default=True, help="Parallel API calls.")
+@click.option("--max-file-mb", default=Limits.max_file_mb, show_default=True, type=float,
+              help="Larger files go to manual review unread.")
+@click.option("--max-pages", default=Limits.max_pdf_pages, show_default=True, type=int,
+              help="PDFs with more pages go to manual review.")
+@click.option("--max-chars", default=Limits.max_chars, show_default=True, type=int,
+              help="CVs with more text go to manual review and are not sent to the model.")
 def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: str | None,
-        as_of: str | None, blind: bool, workers: int) -> None:
+        as_of: str | None, blind: bool, workers: int, max_file_mb: float, max_pages: int,
+        max_chars: int) -> None:
     """Screen every PDF/DOCX/TXT CV in FOLDER against the job and write a ranked shortlist."""
     job = load_job(job_path)
     if mock is None:
@@ -74,8 +82,9 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
     click.echo(f"Screening {folder} for '{job.title}' with the {extractor.name} extractor"
                + (f" ({model_name})" if model_name else "") + " ...")
     try:
+        limits = Limits(max_file_mb=max_file_mb, max_pdf_pages=max_pages, max_chars=max_chars)
         result = run_screening(folder, job, extractor, as_of_date, model=model_name,
-                               workers=workers)
+                               workers=workers, limits=limits)
         paths = write_outputs(result, out_dir, blind=blind)
     except DuplicateCandidateError as exc:
         raise click.ClickException(str(exc)) from exc
