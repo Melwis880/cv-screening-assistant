@@ -107,7 +107,7 @@ def _experience(c: ExperienceCriterion, p: CandidateProfile):
     return "not met", evidence, f"{years:g} years of relevant experience (needs {c.min_years:g})."
 
 
-def _term_hit(term: str, text: str) -> bool:
+def term_hit(term: str, text: str) -> bool:
     return re.search(r"(?<!\w)" + re.escape(term.lower()) + r"(?!\w)", text.lower()) is not None
 
 
@@ -117,7 +117,7 @@ def _skill(c: SkillCriterion, p: CandidateProfile):
         return "unknown", None, "No skills listed in the CV. Ask the candidate."
     for terms, status in ((c.any_of, "met"), (c.partly_any_of, "partly")):
         for s in skills:
-            hit = next((t for t in terms if _term_hit(t, s.name)), None)
+            hit = next((t for t in terms if term_hit(t, s.name)), None)
             if hit:
                 note = f"Skill '{s.name}' matches '{hit}'."
                 if status == "partly":

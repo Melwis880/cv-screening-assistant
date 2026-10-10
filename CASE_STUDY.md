@@ -27,7 +27,8 @@ good people whose CVs are just formatted differently.
 3. **Extracts** skills, dated roles, languages (CEFR level) and education with Claude
    (default model `claude-haiku-4-5-20251001`) into a strict JSON schema. Every item must
    carry a verbatim quote from the CV. Only the redacted text is sent.
-4. **Verifies** each quote against the CV text and drops claims whose quote is not there.
+4. **Verifies** each quote against the CV text and drops claims whose quote is not there or
+   does not contain the claimed value (the skill, the language level, the job's dates).
    Years of relevant experience are computed in code, not by the model.
 5. **Matches** against the job's must-haves and nice-to-haves from a YAML file. Each
    criterion is *met*, *partly*, *not met* or *unknown*, with the CV line as evidence.
@@ -81,8 +82,9 @@ normalises it to one opening.
 ## Limits worth saying out loud
 
 - Redaction is pattern-based. Dates still hint at age; school names can hint at origin.
-- The model can still misread a CV. Quote verification catches invented quotes, not a
-  wrong interpretation of a real one, which is why the summary shows the quote.
+- The model can still misread a CV. Quote verification catches invented quotes and quotes
+  that do not show the claimed value, not every wrong interpretation of a real one, which is
+  why the summary shows the quote.
 - The tool is built for the demo role and English CVs; other roles need their own
   `job.yaml` and a quick check that the criteria types fit.
 - A pilot with a real hiring manager is the next step, not a formality.

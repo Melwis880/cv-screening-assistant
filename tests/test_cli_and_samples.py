@@ -58,6 +58,7 @@ def test_cli_mock_run_end_to_end(tmp_path):
     assert report["extractor"] == "mock"
     assert report["cvs"] == 20 and report["manual_review"] == 0
     assert report["cost_usd"] == 0
+    assert report["dropped_claims"] == 0  # well-formed CVs lose no claim to the evidence check
 
 
 def test_cli_blind_hides_names(tmp_path):

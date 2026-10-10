@@ -68,7 +68,8 @@ def screen_text(
         cand.error = f"extraction failed: {exc}"
         return cand
     cand.usage = usage
-    cand.profile = build_profile(candidate_id, source_file, red.text, extraction, as_of)
+    cand.profile = build_profile(candidate_id, source_file, red.text, extraction, as_of,
+                                 relevance_keywords=job.relevant_experience.keywords)
     cand.results = match_profile(cand.profile, job)
     cand.counts = count(cand.results)
     return cand

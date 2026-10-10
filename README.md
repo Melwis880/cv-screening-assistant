@@ -48,7 +48,7 @@ flowchart LR
     C -->|redacted text only| D{extractor}
     D -->|real mode| E[Claude API<br/>structured outputs<br/>JSON schema]
     D -->|MOCK_LLM=1| F[rule-based<br/>mock extractor]
-    E --> G[extract.build_profile<br/>verify every quote is in the CV<br/>compute years of experience]
+    E --> G[extract.build_profile<br/>every quote is in the CV<br/>and shows the claimed value;<br/>compute years of experience]
     F --> G
     J[job.yaml<br/>must-have / nice-to-have] --> H
     G --> H[matching.py<br/>met / partly / not met / unknown<br/>+ evidence line]
@@ -155,8 +155,14 @@ printed at the top of every shortlist.
   DOCX), and on DOCX files with and without an embedded photo.
 - Missing information is `unknown`, never `not met`, and becomes a question for the
   candidate. Language levels like "fluent" are not guessed into CEFR levels.
-- Every claim needs a quote that is found in the CV; claims with invented quotes are dropped
-  and listed as warnings.
+- Every claim needs a quote of at least two words (or eight characters) that is found in the CV
+  **and contains the claimed value**: the skill name, the language and its level, the job title
+  and its start and end years (or "present"/"now"/"since"), the qualification type, field and
+  "in progress"/"expected" if unfinished. Claims that fail are dropped and listed as warnings
+  in the summary. A role whose quote has none of the job's `relevant_experience.keywords`
+  stays in the profile but does not count as relevant, and a month the quote does not show is
+  counted as the year only. This is strict on purpose: a true claim the model quoted badly is
+  also dropped, but it is listed, so the manager can check the CV instead of trusting a guess.
 - **The tool recommends, the human decides.** Every output says so. There is no auto-reject
   and no email sending; the email drafts contain an invite, a "please tell us more" and a
   decline variant, and the manager chooses.
@@ -183,9 +189,11 @@ printed at the top of every shortlist.
 - **Hidden text counts.** White-on-white text in a PDF is extracted like visible text. Because
   matching only uses quoted lines, a stuffed keyword still needs to be in the CV, and the
   manager sees the quote, but it can move a candidate up.
-- **Prompt injection.** The CV is treated as data in the prompt, and the model never decides
-  the ranking, but a CV can still try to influence what the model extracts. Quote
-  verification limits this to text that is actually in the CV.
+- **Prompt injection.** The CV is treated as data in the prompt (with `<`, `>` and `&`
+  escaped, so it cannot open or close a prompt tag), and the model never decides the ranking,
+  but a CV can still try to influence what the model extracts. Evidence checking limits this
+  to claims whose value is written in the CV itself: a model told to "add Zendesk" or "start
+  the job in 2010" has no quote that shows it, and the claim is dropped.
 - **No OCR.** Scanned image-only PDFs go to "manual review".
 - **Mock mode only understands the sample layout.** It exists for offline tests and demos; its
   results say nothing about LLM accuracy.
