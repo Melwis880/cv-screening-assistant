@@ -9,21 +9,24 @@ description = "Human-in-the-loop CV screening assistant: extract, match against 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+# Floors are versions this was built and tested with; upper bounds stop an untested major
+# release (or a compromised one) from being installed by CI or a fresh setup.
 dependencies = [
-    "anthropic>=1.12",
-    "click>=8.1",
-    "pydantic>=2.6",
-    "pypdf>=4.0",
-    "python-docx>=1.1",
-    "PyYAML>=6.0",
+    "anthropic>=1.12,<2",
+    "click>=8.1,<9",
+    "pydantic>=2.6,<3",
+    "pypdf>=6.1,<7",  # 6.x has the decompression and parser DoS fixes
+    "python-docx>=1.1,<2",
+    "PyYAML>=6.0,<7",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "ruff>=0.6",
-    "reportlab>=4.0",
-    "pillow>=10.0",
+    "pytest>=8.0,<10",
+    "ruff>=0.6,<1",
+    "reportlab>=4.0,<6",
+    "pillow>=10.0,<13",
+    "packaging>=23,<27",
 ]
 
 [project.scripts]

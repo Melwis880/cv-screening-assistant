@@ -62,7 +62,7 @@ where the issue can be reproduced.
 - [x] Flag PDFs with hidden text (white, invisible, tiny or off-page)
 - [x] Output folder 0700, files 0600 regardless of umask
 - [x] Extraction cache by file SHA-256 (validated results only, owner-only, TTL)
-- [ ] Dependency floors and upper bounds (`pypdf>=6.1`)
+- [x] Dependency floors and upper bounds (`pypdf>=6.1`)
 - [ ] Markdown escaping of applicant/model strings; strict name pattern
 - [ ] `.env` loader allowlist
 - [ ] Control/format characters stripped from applicant strings printed by the CLI
