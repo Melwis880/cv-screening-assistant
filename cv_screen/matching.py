@@ -107,8 +107,20 @@ def _experience(c: ExperienceCriterion, p: CandidateProfile):
     return "not met", evidence, f"{years:g} years of relevant experience (needs {c.min_years:g})."
 
 
+_WORD_CHAR = re.compile(r"\w")
+
+
 def term_hit(term: str, text: str) -> bool:
-    return re.search(r"(?<!\w)" + re.escape(term.lower()) + r"(?!\w)", text.lower()) is not None
+    """`term` occurs in `text` as a whole term, case-insensitive: the same rule as the regex
+    (?<!\\w)term(?!\\w), without compiling a pattern per term (fast on long CV lines)."""
+    term, text = term.lower(), text.lower()
+    start = text.find(term) if term else -1
+    while start != -1:
+        end = start + len(term)
+        if not (start and _WORD_CHAR.match(text, start - 1)) and not _WORD_CHAR.match(text, end):
+            return True
+        start = text.find(term, start + 1)
+    return False
 
 
 def _skill(c: SkillCriterion, p: CandidateProfile):

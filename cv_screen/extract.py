@@ -10,6 +10,7 @@ that text and contains the claimed value, and computes years of relevant experie
 
 from __future__ import annotations
 
+import functools
 import html
 import json
 import re
@@ -332,7 +333,9 @@ def _mock_experience(lines: list[str], keywords: list[str]) -> list[Experience]:
 # --------------------------------------------------------------------------- Verification
 
 
+@functools.lru_cache(maxsize=256)
 def _norm(s: str) -> str:
+    # Cached: the CV text and a shared quote line are normalised once, not once per claim.
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
@@ -391,7 +394,7 @@ def _months_in(quote: str) -> set[str]:
 
 def _quote_problem(quote: str, cv_text: str) -> str | None:
     q = _norm(quote).strip(" .\"'")
-    if len(q.split()) < MIN_QUOTE_WORDS and len(q) < MIN_QUOTE_CHARS:
+    if len(q) < MIN_QUOTE_CHARS and len(q.split()) < MIN_QUOTE_WORDS:
         return "quote too short"
     if not quote_in_text(quote, cv_text):
         return "quote not found"

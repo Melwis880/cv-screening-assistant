@@ -63,7 +63,10 @@ _LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 _PHOTO_RE = re.compile(r"^\s*[\[(]?\s*(photo|picture|image|foto)\s*[\])]?\s*$", re.IGNORECASE)
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
+# Lookbehinds below make a match start only at the beginning of a run of characters: without
+# them a long run ("xxxx...", spaces) is rescanned from every position (quadratic time).
+_EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(\.[\w-]+)+")
+_SEGMENT_SPLIT_RE = re.compile(r"(?<!\s)\s+\|\s+|(?<!\s)\s{2,}\|\s*|(?<!\s)\s*\|\s{2,}")
 _URL_RE = re.compile(r"(https?://\S+|www\.\S+|linkedin\.com/\S+)", re.IGNORECASE)
 _PHONE_RE = re.compile(r"(?<![\w/])\+?\d[\d ()/.-]{7,}\d(?![\w/])")
 # Dates and date ranges look like phone numbers to a naive regex ("08/2019 - 02/2022").
@@ -115,7 +118,7 @@ def redact(text: str) -> RedactionResult:
         if _PHOTO_RE.match(line):
             result.bump("photo")
             continue
-        segments = [s for s in re.split(r"\s+\|\s+|\s{2,}\|\s*|\s*\|\s{2,}", line)]
+        segments = _SEGMENT_SPLIT_RE.split(line)
         kept_segments = []
         for seg in segments:
             m = _LABEL_RE.match(seg)
