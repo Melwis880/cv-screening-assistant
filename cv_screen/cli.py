@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
+import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -33,6 +36,40 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
             os.environ.setdefault(key, value.strip('"').strip("'"))
 
 
+def term_safe(text: str) -> str:
+    """Text from a CV file (names, file names, errors) for the terminal: control and format
+    characters (escape sequences, bidi overrides, line separators) become '?'."""
+    return "".join("?" if unicodedata.category(ch) in {"Cc", "Cf", "Zl", "Zp"} else ch
+                   for ch in text)
+
+
+class _TermSafeFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return term_safe(super().format(record))
+
+
+class _StderrHandler(logging.StreamHandler):
+    """Writes to whatever sys.stderr is at the time of the log call."""
+
+    @property
+    def stream(self):  # type: ignore[override]
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, value) -> None:
+        pass
+
+
+def _route_library_warnings() -> None:
+    """pypdf logs warnings that can quote a PDF's content; print them sanitised."""
+    log = logging.getLogger("pypdf")
+    if not any(isinstance(h.formatter, _TermSafeFormatter) for h in log.handlers):
+        handler = _StderrHandler()
+        handler.setFormatter(_TermSafeFormatter("warning (%(name)s): %(message)s"))
+        log.addHandler(handler)
+        log.propagate = False
+
+
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -41,6 +78,7 @@ def _env_flag(name: str) -> bool:
 def main() -> None:
     """CV screening assistant. The tool recommends, the human decides."""
     _load_dotenv()
+    _route_library_warnings()
 
 
 @main.command()
@@ -104,12 +142,22 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
                                workers=workers, limits=limits, cache=cache)
         paths = write_outputs(result, out_dir, blind=blind)
     except DuplicateCandidateError as exc:
-        raise click.ClickException(str(exc)) from exc
+        raise click.ClickException(term_safe(str(exc))) from exc
 
     tiers = {t: sum(1 for c in result.ranked if c.counts.tier == t) for t in "ABC"}
     click.echo(f"Screened {len(result.ranked)} of {len(result.candidates)} CVs in "
                f"{result.wall_seconds:.1f}s. Tier A: {tiers['A']}, B: {tiers['B']}, "
                f"C: {tiers['C']}, manual review: {len(result.failed)}.")
+    if result.failed:
+        click.echo("Needs manual review:")
+        for c in result.failed:
+            click.echo(f"  - {term_safe(c.source_file)}: {term_safe(c.error or '')}")
+    flagged = [c for c in result.candidates if c.flags]
+    if flagged:
+        click.echo("Check before relying on the extracted claims:")
+        for c in flagged:
+            click.echo(f"  - {term_safe(c.source_file)}: "
+                       + "; ".join(term_safe(f.split(":")[0]) for f in c.flags))
     if cache is not None:
         click.echo(f"Cache: {result.cache_hits} of {len(result.candidates)} CVs reused from the "
                    f"cache (no API call); entries older than {cache_ttl_days:g} days are deleted.")

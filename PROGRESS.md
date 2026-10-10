@@ -65,7 +65,7 @@ where the issue can be reproduced.
 - [x] Dependency floors and upper bounds (`pypdf>=6.1`)
 - [x] Markdown escaping of applicant/model strings; strict name pattern
 - [x] `.env` loader allowlist
-- [ ] Control/format characters stripped from applicant strings printed by the CLI
+- [x] Control/format characters stripped from applicant strings printed by the CLI
 - [ ] README: redaction is best-effort; IMAP attachments saved under generated names
 - [ ] BUILD_LOG "Security review" section, DECISIONS entries
 - Out of scope (agreed): SHA-pinning GitHub Actions, a lockfile.

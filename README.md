@@ -109,6 +109,11 @@ Input limits protect against oversized or hostile uploads (cost, memory, zip bom
 a limit is never rejected: it is listed under "Needs manual review" with the reason. DOCX files
 that unpack to more than 50 MB are treated the same way.
 
+The run summary in the terminal lists the CVs that need manual review and the ones with a file
+warning (e.g. hidden PDF text). File names, errors and PDF library warnings can contain
+anything an applicant put in the file name or PDF, so control and format characters (terminal
+escape sequences, bidi overrides, line separators) are printed as `?`.
+
 ### Environment (`.env`, see [`.env.example`](.env.example))
 
 | Variable | Meaning |
