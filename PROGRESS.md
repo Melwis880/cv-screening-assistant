@@ -53,7 +53,8 @@ Status legend: `[x]` done, `[ ]` not done. Re-read at the start of each work chu
 
 ## Phase 8 – Security review fixes (2026-10-11)
 Findings from the `/security-audit` of this branch. Each fix has a test that fails on the old code
-where the issue can be reproduced.
+where the issue can be reproduced (the old CLI printed no applicant strings, so the terminal fix
+guards the new output only).
 - [x] Evidence must prove the claim: min quote length, claim value inside its own quote, CV text escaped in the prompt
 - [x] CSV formula injection: escape every string cell in `shortlist.csv`
 - [x] Unique candidate IDs (stem + short SHA-256), fail before writing output if IDs collide
@@ -67,23 +68,26 @@ where the issue can be reproduced.
 - [x] `.env` loader allowlist
 - [x] Control/format characters stripped from applicant strings printed by the CLI
 - [x] README: redaction is best-effort; IMAP attachments saved under generated names
-- [ ] BUILD_LOG "Security review" section, DECISIONS entries
+- [x] BUILD_LOG "Security review" section, DECISIONS entries
 - Out of scope (agreed): SHA-pinning GitHub Actions, a lockfile.
 
-## Final state (2026-10-09)
+## Final state (2026-10-11, after the security review)
 
 **Done**
-- Full pipeline: parse (PDF/DOCX/TXT) -> redact protected attributes -> extract (Claude structured outputs or offline mock) -> verify quotes -> match -> tiered ranking -> shortlist.md/.csv, per-candidate summaries, three-variant email drafts, run_report.json.
+- Full pipeline: parse (PDF/DOCX/TXT, with input limits and a hidden-text flag) -> redact protected attributes -> extract (Claude structured outputs or offline mock, cached by file SHA-256 in real mode) -> verify that each quote is in the CV and contains the claim -> match -> tiered ranking -> shortlist.md/.csv, per-candidate summaries, three-variant email drafts, run_report.json, all owner-only and escaped.
 - 20 synthetic, reproducible sample CVs (10 PDF, 10 DOCX, three layouts) and `job.yaml`.
-- 97 offline tests, including protected-attribute invariance (text, Claude prompt and results identical) and missing-info handling. CI green on Python 3.11-3.13.
+- 177 offline tests (97 before the review), including protected-attribute invariance, missing-info handling and one test file per security finding. Locally: ruff clean (also with `--target-version py311`), all tests pass on Python 3.13, all modules compile on 3.12, CI's mock smoke run passes.
+- Security review: all 12 requested items and one extra finding (quadratic regexes) fixed in 14 small commits; see BUILD_LOG "Security review" and DECISIONS entries dated 2026-10-11.
 - README (Mermaid architecture, quickstart, config, fairness/privacy, limitations), CASE_STUDY (measured vs estimated clearly labelled), DECISIONS, BUILD_LOG, optional n8n workflow.
 
 **Not done**
-- Real-mode demo run on the samples (needs `ANTHROPIC_API_KEY`). Therefore no measured real-mode time, tokens, cost or extraction accuracy yet; CASE_STUDY shows estimates labelled as such.
+- CI has not run on the security-review commits yet (not pushed at the time of writing).
+- Real-mode demo run on the samples (needs `ANTHROPIC_API_KEY`). Therefore no measured real-mode time, tokens, cost or extraction accuracy yet, and no measured rate of true claims dropped by the stricter evidence check; CASE_STUDY shows estimates labelled as such.
 - n8n workflow not tested in a running n8n instance.
+- Agreed out of scope: SHA-pinned GitHub Actions, a lockfile.
 
 **Next steps**
 1. `cp .env.example .env`, add a key, run `screen run samples/ --job job.yaml --as-of 2026-10-01`; copy `out/run_report.json` numbers into CASE_STUDY.md and BUILD_LOG.md; compare tiers with the mock run and note differences.
-2. Spot-check extraction accuracy on the samples (claims vs CV) and record it as demo data.
+2. Spot-check extraction accuracy on the samples (claims vs CV) and record it as demo data, including how many true claims the evidence check drops (listed in each summary) and whether the prompt or the checks need adjusting.
 3. Optionally compare a second model via `--model` on the same samples.
 4. Pilot with a real hiring manager: time per opening, disagreement with tiers, wrong claims found.

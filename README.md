@@ -269,6 +269,11 @@ python scripts/generate_samples.py      # regenerate samples (deterministic)
 CI (`.github/workflows/ci.yml`) runs lint, the test suite, a reproducibility check of the
 samples and a mock-mode run on Python 3.11 to 3.13.
 
+Security tests (each reproduces a finding of the 2026-10-11 security review, see
+[`BUILD_LOG.md`](BUILD_LOG.md)): `test_evidence.py`, `test_report_safety.py`,
+`test_candidate_ids.py`, `test_limits.py`, `test_hidden_text.py`, `test_cache.py`,
+`test_env.py`, `test_terminal.py`, `test_packaging.py`.
+
 Optional automation: [`n8n/`](n8n/) has a workflow that runs the screening when a new CV lands
 in a folder and notifies the manager.
 
