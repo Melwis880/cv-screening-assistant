@@ -1,16 +1,19 @@
 """Turn CV files (PDF, DOCX, TXT/MD) into plain text.
 
 Images (including photos) are never extracted: only the text layer is read. Files over the
-size limits are not parsed at all; they go to manual review.
+size limits are not parsed at all; they go to manual review. PDF text that a reader cannot see
+(white, invisible, tiny or off-page) is still extracted but flagged.
 """
 
 from __future__ import annotations
 
 import io
+import math
 import re
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from docx import Document
 from pypdf import PdfReader
@@ -43,8 +46,19 @@ class Limits:
         return int(self.max_file_mb * MB)
 
 
+@dataclass
+class ParsedCV:
+    text: str
+    warnings: list[str] = field(default_factory=list)  # shown to the manager, never a reason
+
+
 def parse_file(path: Path, limits: Limits | None = None) -> str:
+    return parse_cv(path, limits).text
+
+
+def parse_cv(path: Path, limits: Limits | None = None) -> ParsedCV:
     limits = limits or Limits()
+    warnings: list[str] = []
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise ParseError(f"unsupported file type: {path.name}")
@@ -55,7 +69,7 @@ def parse_file(path: Path, limits: Limits | None = None) -> str:
                              f"{limits.max_file_mb:g} MB limit (--max-file-mb); read it manually")
         data = path.read_bytes()
         if suffix == ".pdf":
-            text = _parse_pdf(data, path.name, limits)
+            text = _parse_pdf(data, path.name, limits, warnings)
         elif suffix == ".docx":
             text = _parse_docx(data, path.name, limits)
         else:
@@ -69,7 +83,7 @@ def parse_file(path: Path, limits: Limits | None = None) -> str:
     text = normalize_text(text)
     if not text.strip():
         raise ParseError(f"no text found in {path.name} (scanned image? OCR is not supported)")
-    return text
+    return ParsedCV(text, warnings)
 
 
 def _too_long(name: str, chars: int, limits: Limits) -> LimitError:
@@ -77,19 +91,93 @@ def _too_long(name: str, chars: int, limits: Limits) -> LimitError:
                       f"limit (--max-chars); not sent to the model, read it manually")
 
 
-def _parse_pdf(data: bytes, name: str, limits: Limits) -> str:
+HIDDEN_TEXT_MIN_CHARS = 30  # non-space characters; a hidden sentence, not a stray dot
+
+
+def _parse_pdf(data: bytes, name: str, limits: Limits, warnings: list[str]) -> str:
     reader = PdfReader(io.BytesIO(data))
     pages = len(reader.pages)
     if pages > limits.max_pdf_pages:
         raise LimitError(f"{name} has {pages} pages, over the {limits.max_pdf_pages} page limit "
                          f"(--max-pages); read it manually")
-    parts, chars = [], 0
+    parts, chars, hidden, shown = [], 0, 0, 0
     for page in reader.pages:
-        parts.append(page.extract_text() or "")
+        tracker = _Visibility(page.mediabox)
+        parts.append(page.extract_text(visitor_operand_before=tracker.before) or "")
+        hidden, shown = hidden + tracker.hidden, shown + tracker.hidden + tracker.visible
         chars += len(parts[-1]) + 1
         if chars > limits.max_chars:  # stop extracting early
             raise _too_long(name, chars, limits)
+    if hidden >= HIDDEN_TEXT_MIN_CHARS:
+        warnings.append(
+            f"Hidden text in the PDF: {hidden} of {shown} characters are not visible on the page "
+            "(white, invisible, tiny or off-page text). This can be the text layer of a scanned "
+            "CV, or text meant to steer the screening. Compare the PDF with the extracted "
+            "claims before relying on them.")
     return "\n".join(parts)
+
+
+class _Visibility:
+    """Follows the PDF graphics state while pypdf extracts a page and counts the characters a
+    reader cannot see: render mode invisible, white fill on a page with no coloured fill or
+    image drawn before it, an effective size under 1 pt, or a position outside the page.
+    A heuristic: it only feeds a warning for the manager."""
+
+    TEXT_OPS = {b"Tj", b"TJ", b"'", b'"'}
+    PAINT_OPS = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
+    BACKDROP_OPS = {b"Do", b"sh", b"INLINE IMAGE"}  # images, forms, shadings
+
+    def __init__(self, box: Any):
+        self.box = [float(v) for v in (box.left, box.bottom, box.right, box.top)]
+        self.state = {"white": False, "render": 0, "size": 12.0}
+        self.stack: list[dict] = []
+        self.backdrop = False
+        self.hidden = 0
+        self.visible = 0
+
+    def before(self, op: bytes, args: list, cm: list, tm: list) -> None:
+        s = self.state
+        nums = [float(a) for a in args if isinstance(a, int | float)]
+        if op == b"q":
+            self.stack.append(dict(s))
+        elif op == b"Q" and self.stack:
+            self.state = self.stack.pop()
+        elif op in (b"g", b"rg", b"k", b"sc", b"scn") and nums:
+            # 1 value: gray, 3: RGB, 4: CMYK (where white is all zero)
+            s["white"] = (all(v <= 0.05 for v in nums) if len(nums) == 4
+                          else all(v >= 0.95 for v in nums))
+        elif op == b"cs":
+            s["white"] = False  # a new colour space starts at black
+        elif op == b"Tr" and nums:
+            s["render"] = int(nums[0])
+        elif op == b"Tf" and nums:
+            s["size"] = abs(nums[-1])
+        elif op in self.PAINT_OPS and not s["white"] or op in self.BACKDROP_OPS:
+            self.backdrop = True
+        elif op in self.TEXT_OPS:
+            n = _shown_chars(op, args)
+            if self._is_hidden(cm, tm):
+                self.hidden += n
+            else:
+                self.visible += n
+
+    def _is_hidden(self, cm: list, tm: list) -> bool:
+        s = self.state
+        if s["render"] in (3, 7) or (s["white"] and not self.backdrop):
+            return True
+        scale = math.sqrt(abs((tm[0] * tm[3] - tm[1] * tm[2]) * (cm[0] * cm[3] - cm[1] * cm[2])))
+        if s["size"] * scale < 1.0:
+            return True
+        x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+        y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+        left, bottom, right, top = self.box
+        return not (left - 5 <= x <= right + 5 and bottom - 5 <= y <= top + 5)
+
+
+def _shown_chars(op: bytes, args: list) -> int:
+    items = list(args[0]) if op == b"TJ" and args else args[-1:]
+    return sum(len(i.replace(" ", "")) if isinstance(i, str) else len(i.replace(b" ", b""))
+               for i in items if isinstance(i, str | bytes))
 
 
 def _parse_docx(data: bytes, name: str, limits: Limits) -> str:

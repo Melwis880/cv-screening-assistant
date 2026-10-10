@@ -194,9 +194,14 @@ printed at the top of every shortlist.
   pronouns and titles. It does not catch every proxy: graduation and employment years hint at
   age, school or club names can hint at origin or gender, and "native" language can hint at
   nationality. Read the redacted text in the summaries if you are unsure.
-- **Hidden text counts.** White-on-white text in a PDF is extracted like visible text. Because
-  matching only uses quoted lines, a stuffed keyword still needs to be in the CV, and the
-  manager sees the quote, but it can move a candidate up.
+- **Hidden text is flagged, not removed.** Text a reader cannot see (white on a page without a
+  coloured background, invisible render mode, under 1 pt, or outside the page) is still
+  extracted, because the same signals also match the text layer of a scanned CV. When a PDF
+  has 30 or more hidden characters, the shortlist row, the summary and the CSV
+  (`file_warnings`) say so, and the manager should compare the PDF with the claims. A hidden
+  keyword can still back a claim; the warning is what makes that visible. The check is a
+  heuristic: white text on a dark image or band counts as visible, and other tricks (text
+  under an image, same colour as a coloured background) are not detected.
 - **Prompt injection.** The CV is treated as data in the prompt (with `<`, `>` and `&`
   escaped, so it cannot open or close a prompt tag), and the model never decides the ranking,
   but a CV can still try to influence what the model extracts. Evidence checking limits this

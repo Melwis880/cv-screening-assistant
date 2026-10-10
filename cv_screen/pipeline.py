@@ -13,7 +13,7 @@ from pathlib import Path
 from cv_screen.extract import ExtractionError, Extractor, Usage, build_profile
 from cv_screen.job import JobSpec
 from cv_screen.matching import Counts, count, match_profile, sort_key
-from cv_screen.parsing import Limits, ParseError, find_cv_files, parse_file
+from cv_screen.parsing import Limits, ParseError, find_cv_files, parse_cv
 from cv_screen.redact import redact
 from cv_screen.schema import CandidateProfile, CriterionResult
 
@@ -36,6 +36,7 @@ class CandidateResult:
     usage: Usage = field(default_factory=Usage)
     seconds: float = 0.0
     rank: int | None = None
+    flags: list[str] = field(default_factory=list)  # file warnings, e.g. hidden PDF text
 
 
 @dataclass
@@ -123,14 +124,15 @@ def _screen_file(path: Path, cid: str, job: JobSpec, extractor: Extractor,
                  as_of: date, limits: Limits) -> CandidateResult:
     started = time.perf_counter()
     try:
-        text = parse_file(path, limits)
+        parsed = parse_cv(path, limits)
     except ParseError as exc:
         cand = CandidateResult(cid, path.name, None, error=str(exc))
     else:
         try:
-            cand = screen_text(cid, path.name, text, job, extractor, as_of)
+            cand = screen_text(cid, path.name, parsed.text, job, extractor, as_of)
         except Exception as exc:  # one bad CV must not stop the run; it goes to manual review
             cand = CandidateResult(cid, path.name, None, error=f"{type(exc).__name__}: {exc}")
+        cand.flags = parsed.warnings
     cand.seconds = time.perf_counter() - started
     return cand
 

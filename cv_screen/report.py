@@ -65,7 +65,9 @@ def _reasons(cand: CandidateResult) -> str:
             must.append(f"{SYMBOL[status]}: {', '.join(ids)}")
     nice = [r.criterion_id + (" (partly)" if r.status == "partly" else "")
             for r in cand.results if not r.must_have and r.status in ("met", "partly")]
-    return "Must-haves " + "; ".join(must) + (f". Nice-to-haves: {', '.join(nice)}" if nice else "")
+    nice_text = f". Nice-to-haves: {', '.join(nice)}" if nice else ""
+    flags = "".join(f" WARNING: {f.split(':')[0]} (see summary)." for f in cand.flags)
+    return "Must-haves " + "; ".join(must) + nice_text + flags
 
 
 def _question(run: ScreeningRun, criterion_id: str) -> str:
@@ -161,7 +163,7 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
     header = ["rank", "candidate_id", "name", "source_file", "tier", "must_met", "must_partly",
               "must_not_met", "must_unknown", "nice_met", "nice_partly", "unknown_total"]
     header += [f"{cid}_status" for cid in crit_ids] + [f"{cid}_evidence" for cid in crit_ids]
-    header += ["years_relevant_experience", "dropped_claims", "error"]
+    header += ["years_relevant_experience", "dropped_claims", "error", "file_warnings"]
     with path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(header)
@@ -176,7 +178,8 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
             row += [(by_id[cid].evidence or "") if cid in by_id else "" for cid in crit_ids]
             years = c.profile.years_relevant_experience if c.profile else None
             row += ["" if years is None else years,
-                    " / ".join(c.profile.dropped_claims) if c.profile else "", c.error or ""]
+                    " / ".join(c.profile.dropped_claims) if c.profile else "", c.error or "",
+                    " / ".join(c.flags)]
             w.writerow([csv_cell(v) for v in row])
 
 
@@ -231,8 +234,10 @@ def candidate_summary(run: ScreeningRun, cand: CandidateResult, blind: bool) -> 
         lines += ["", "## Questions to ask before deciding", ""]
         for r in questions:
             lines.append(f"- {r.label}: {r.note}")
-    if p.dropped_claims or p.warnings:
+    if cand.flags or p.dropped_claims or p.warnings:
         lines += ["", "## Warnings", ""]
+        for f in cand.flags:
+            lines.append(f"- **{f}**")
         for d in p.dropped_claims:
             lines.append(f"- Dropped unverified claim: {d}")
         for wmsg in p.warnings:
@@ -334,10 +339,11 @@ def run_report(run: ScreeningRun) -> dict:
         ),
         "tiers": {t: sum(1 for c in run.ranked if c.counts.tier == t) for t in ("A", "B", "C")},
         "dropped_claims": sum(len(c.profile.dropped_claims) for c in run.ranked),
+        "file_warnings": sum(len(c.flags) for c in run.candidates),
         "per_cv": [
             {"candidate_id": c.candidate_id, "seconds": round(c.seconds, 3),
              "input_tokens": c.usage.input_tokens, "output_tokens": c.usage.output_tokens,
-             "error": c.error}
+             "error": c.error, "file_warnings": c.flags}
             for c in run.candidates
         ],
     }
