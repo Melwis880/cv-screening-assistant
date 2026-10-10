@@ -73,6 +73,7 @@ the reasoning behind each choice.
 | `cv_screen/matching.py` | Criterion rules, tiers, sort key |
 | `cv_screen/pipeline.py` | Runs every CV (in parallel threads), failures go to manual review |
 | `cv_screen/report.py` | Markdown, CSV, summaries, email drafts, run report |
+| `cv_screen/fileio.py` | Owner-only output files (folders 0700, files 0600, no symlink following) |
 | `cv_screen/cli.py` | `screen run` |
 
 ## Configuration
@@ -180,7 +181,9 @@ printed at the top of every shortlist.
 - Everything runs locally except the extraction call in real mode, which sends redacted CV
   text to the Anthropic API under your own API key and your organisation's data retention
   settings with Anthropic. Mock mode sends nothing anywhere.
-- Output in `out/` contains names and CV content. It is git-ignored. Delete it when the
+- Output in `out/` contains names and CV content. It is created owner-only (folders 0700,
+  files 0600, whatever the umask; existing files are tightened) and written without following
+  symlinks, so other users on a shared machine cannot read it. It is git-ignored. Delete it when the
   opening is closed, within the retention period your local rules set (under GDPR, only as
   long as needed for the hiring decision and possible legal claims, unless the candidate agrees
   to longer storage; this is not legal advice). The tool itself keeps no database and no

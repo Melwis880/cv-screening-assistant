@@ -6,6 +6,7 @@ import csv
 import json
 from pathlib import Path
 
+from cv_screen.fileio import open_private, private_dir, write_private
 from cv_screen.job import (
     EducationCriterion,
     ExperienceCriterion,
@@ -31,22 +32,21 @@ def write_outputs(run: ScreeningRun, out: Path, blind: bool = False) -> dict[str
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         raise DuplicateCandidateError(
             f"duplicate candidate IDs {', '.join(dupes)}: nothing was written")
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "candidates").mkdir(exist_ok=True)
-    (out / "emails").mkdir(exist_ok=True)
+    private_dir(out)  # the outputs hold names and CV content
+    private_dir(out / "candidates")
+    private_dir(out / "emails")
     paths = {
         "shortlist_md": out / "shortlist.md",
         "shortlist_csv": out / "shortlist.csv",
         "run_report": out / "run_report.json",
     }
-    paths["shortlist_md"].write_text(shortlist_markdown(run, blind), encoding="utf-8")
+    write_private(paths["shortlist_md"], shortlist_markdown(run, blind))
     write_csv(run, paths["shortlist_csv"], blind)
     for cand in run.candidates:
-        (out / "candidates" / f"{cand.candidate_id}.md").write_text(
-            candidate_summary(run, cand, blind), encoding="utf-8")
-        (out / "emails" / f"{cand.candidate_id}.md").write_text(
-            email_draft(run, cand), encoding="utf-8")
-    paths["run_report"].write_text(json.dumps(run_report(run), indent=2), encoding="utf-8")
+        write_private(out / "candidates" / f"{cand.candidate_id}.md",
+                      candidate_summary(run, cand, blind))
+        write_private(out / "emails" / f"{cand.candidate_id}.md", email_draft(run, cand))
+    write_private(paths["run_report"], json.dumps(run_report(run), indent=2))
     return paths
 
 
@@ -164,7 +164,7 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
               "must_not_met", "must_unknown", "nice_met", "nice_partly", "unknown_total"]
     header += [f"{cid}_status" for cid in crit_ids] + [f"{cid}_evidence" for cid in crit_ids]
     header += ["years_relevant_experience", "dropped_claims", "error", "file_warnings"]
-    with path.open("w", newline="", encoding="utf-8") as fh:
+    with open_private(path) as fh:
         w = csv.writer(fh)
         w.writerow(header)
         for c in run.candidates:
