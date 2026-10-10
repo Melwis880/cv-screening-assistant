@@ -15,18 +15,22 @@ from cv_screen.parsing import Limits
 from cv_screen.pipeline import DuplicateCandidateError, run_screening
 from cv_screen.report import write_outputs
 
+# Only the tool's own settings. Anything else in a .env (e.g. ANTHROPIC_BASE_URL or a proxy)
+# could send the API key and CV text elsewhere if `screen` runs in an untrusted folder.
+DOTENV_ALLOWED = {"ANTHROPIC_API_KEY", "CV_SCREEN_MODEL", "MOCK_LLM"}
+
 
 def _load_dotenv(path: Path = Path(".env")) -> None:
-    """Minimal .env reader; existing environment variables win."""
+    """Minimal .env reader for DOTENV_ALLOWED; existing environment variables win."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        key, value = line.split("=", 1)
-        if value.strip():
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key in DOTENV_ALLOWED and value:
+            os.environ.setdefault(key, value.strip('"').strip("'"))
 
 
 def _env_flag(name: str) -> bool:

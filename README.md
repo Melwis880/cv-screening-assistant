@@ -117,6 +117,11 @@ that unpack to more than 50 MB are treated the same way.
 | `CV_SCREEN_MODEL` | Override the extraction model. |
 | `MOCK_LLM` | `1` to run offline with the mock extractor (used by the tests and CI). |
 
+`screen` reads `.env` from the current folder and loads **only these three variables**; any
+other line (for example `ANTHROPIC_BASE_URL` or a proxy setting, which could send your key and
+CV text elsewhere) is ignored. Variables already set in your shell win. Settings like a proxy
+belong in your shell environment, where you set them on purpose.
+
 ### Job criteria (`job.yaml`)
 
 ```yaml
