@@ -69,6 +69,11 @@ def parse_cv(path: Path, limits: Limits | None = None) -> ParsedCV:
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise ParseError(f"unsupported file type: {path.name}")
+    if path.is_symlink():
+        # A link in the applications folder could point at any file the manager can read
+        # (an SSH key renamed .txt), whose text would be sent to the API and quoted in outputs.
+        raise ParseError(f"{path.name} is a symbolic link; not read (copy the file into the "
+                         "folder instead)")
     try:
         size = path.stat().st_size
         if size > limits.max_file_bytes:

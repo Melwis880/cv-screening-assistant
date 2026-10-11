@@ -117,9 +117,11 @@ def screen_text(
 
 
 def file_sha256(path: Path, max_bytes: int | None = None) -> str | None:
-    """SHA-256 of the file, or None if it is unreadable or over `max_bytes` (parsing reports
-    either, and the CV goes to manual review)."""
+    """SHA-256 of the file, or None if it is a symbolic link, unreadable or over `max_bytes`
+    (parsing reports each, and the CV goes to manual review)."""
     try:
+        if path.is_symlink():  # not read at all; parsing reports it
+            return None
         if max_bytes is not None and path.stat().st_size > max_bytes:
             return None
         with path.open("rb") as fh:

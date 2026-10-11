@@ -3,7 +3,7 @@ from docx import Document
 
 from cv_screen.extract import MockExtractor
 from cv_screen.parsing import ParseError, find_cv_files, normalize_text, parse_file
-from cv_screen.pipeline import screen_text
+from cv_screen.pipeline import run_screening, screen_text
 from tests.conftest import SAMPLES
 
 
@@ -74,3 +74,18 @@ def test_invisible_format_characters_do_not_split_words(job, as_of):
     assert text == "Skills\nZendesk, livechat\nLanguages\nGerman: C1\n"
     cand = screen_text("c", "c.txt", text, job, MockExtractor(), as_of)
     assert {r.criterion_id: r.status for r in cand.results}["helpdesk_tool"] == "met"
+
+
+def test_symlinked_cv_is_not_followed(tmp_path, job, as_of):
+    secret = tmp_path / "private" / "id_rsa"
+    secret.parent.mkdir()
+    secret.write_text("Skills\nZendesk\nSECRET-KEY-MATERIAL\n", encoding="utf-8")
+    folder = tmp_path / "applications"
+    folder.mkdir()
+    (folder / "cv.txt").symlink_to(secret)
+    (folder / "real.txt").write_text("Skills\nlive chat\n", encoding="utf-8")
+    run = run_screening(folder, job, MockExtractor(), as_of)
+    failed = {c.source_file: c.error for c in run.failed}
+    assert "symbolic link" in failed["cv.txt"]
+    assert len(run.ranked) == 1
+    assert not any("SECRET" in c.redacted_text for c in run.candidates)
