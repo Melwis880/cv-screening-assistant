@@ -307,3 +307,7 @@ in a folder and notifies the manager.
 
 Project tracking: [`PROGRESS.md`](PROGRESS.md), [`DECISIONS.md`](DECISIONS.md),
 [`BUILD_LOG.md`](BUILD_LOG.md), case study in [`CASE_STUDY.md`](CASE_STUDY.md).
+
+## License
+
+MIT, see [`LICENSE`](LICENSE).
