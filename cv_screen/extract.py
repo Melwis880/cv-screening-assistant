@@ -35,6 +35,10 @@ from cv_screen.schema import (
 )
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+# Seconds per API attempt. The SDK default is 10 minutes and timeouts are retried, so a stalled
+# connection could hold a worker for 40 minutes; an extraction normally takes seconds.
+REQUEST_TIMEOUT_S = 120.0
+MAX_RETRIES = 3
 
 # USD per million tokens (input, output). Source: Anthropic pricing page, checked 2026-10-09.
 PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
@@ -136,7 +140,7 @@ class ClaudeExtractor:
         if client is None:
             import anthropic
 
-            client = anthropic.Anthropic(max_retries=3)
+            client = anthropic.Anthropic(max_retries=MAX_RETRIES, timeout=REQUEST_TIMEOUT_S)
         self.client = client
         self.model = model
         self.max_tokens = max_tokens

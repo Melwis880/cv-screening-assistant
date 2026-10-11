@@ -175,3 +175,10 @@ def test_request_serialises_through_real_sdk(job):
     assert seen["body"]["model"] == DEFAULT_MODEL
     assert extraction.skills[0].name == "Zendesk"
     assert usage.cost_usd == pytest.approx((1500 * 1.0 + 600 * 5.0) / 1e6)
+
+
+def test_default_client_has_a_request_timeout(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")  # client is built, never called
+    client = ClaudeExtractor().client
+    assert client.timeout == 120.0
+    assert client.max_retries == 3
