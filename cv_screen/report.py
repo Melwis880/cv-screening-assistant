@@ -75,6 +75,17 @@ def _display_name(cand: CandidateResult, blind: bool) -> str:
     return safe_name(cand.name) or "(not found)"
 
 
+def shown_source(cand: CandidateResult, blind: bool) -> str:
+    """The CV's file name, or a placeholder in blind mode (file names often contain the
+    applicant's name; run_report.json keeps the mapping)."""
+    return "(hidden, see run_report.json)" if blind else cand.source_file
+
+
+def shown_error(cand: CandidateResult, blind: bool) -> str:
+    error = cand.error or ""
+    return error.replace(cand.source_file, "this file") if blind else error
+
+
 def _reasons(cand: CandidateResult) -> str:
     """Must-haves first (every status), then only the nice-to-haves that are met or partly."""
     must = []
@@ -153,7 +164,7 @@ def shortlist_markdown(run: ScreeningRun, blind: bool) -> str:
     if run.failed:
         lines += ["## Needs manual review (could not be screened)", ""]
         for c in run.failed:
-            lines.append(f"- {md(c.source_file)}: {md(c.error or '')}")
+            lines.append(f"- {md(shown_source(c, blind))}: {md(shown_error(c, blind))}")
         lines.append("")
     lines += [
         "## Next steps for the manager",
@@ -185,7 +196,7 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
         for c in run.candidates:
             by_id = {r.criterion_id: r for r in c.results}
             k = c.counts
-            row = [c.rank or "", c.candidate_id, _display_name(c, blind), c.source_file,
+            row = [c.rank or "", c.candidate_id, _display_name(c, blind), shown_source(c, blind),
                    k.tier if k else "manual review"]
             row += ([k.must_met, k.must_partly, k.must_not_met, k.must_unknown, k.nice_met,
                      k.nice_partly, k.unknown_total] if k else [""] * 7)
@@ -193,7 +204,8 @@ def write_csv(run: ScreeningRun, path: Path, blind: bool) -> None:
             row += [(by_id[cid].evidence or "") if cid in by_id else "" for cid in crit_ids]
             years = c.profile.years_relevant_experience if c.profile else None
             row += ["" if years is None else years,
-                    " / ".join(c.profile.dropped_claims) if c.profile else "", c.error or "",
+                    " / ".join(c.profile.dropped_claims) if c.profile else "",
+                    shown_error(c, blind),
                     " / ".join(c.flags)]
             w.writerow([csv_cell(v) for v in row])
 
@@ -204,11 +216,11 @@ def candidate_summary(run: ScreeningRun, cand: CandidateResult, blind: bool) -> 
         "",
         f"> {HUMAN_DECIDES}",
         "",
-        f"- Source file: {md(cand.source_file)}",
+        f"- Source file: {md(shown_source(cand, blind))}",
         f"- Name (not used for matching): {_display_name(cand, blind)}",
     ]
     if cand.counts is None:
-        lines += ["", f"**Could not be screened:** {md(cand.error or '')}", "",
+        lines += ["", f"**Could not be screened:** {md(shown_error(cand, blind))}", "",
                   "Please read this CV manually.", ""]
         return "\n".join(lines)
     k = cand.counts
@@ -359,7 +371,8 @@ def run_report(run: ScreeningRun) -> dict:
         "file_warnings": sum(len(c.flags) for c in run.candidates),
         "cache_hits": run.cache_hits,
         "per_cv": [
-            {"candidate_id": c.candidate_id, "seconds": round(c.seconds, 3),
+            {"candidate_id": c.candidate_id, "source_file": c.source_file,
+             "seconds": round(c.seconds, 3),
              "input_tokens": c.usage.input_tokens, "output_tokens": c.usage.output_tokens,
              "cached": c.cached, "error": c.error, "file_warnings": c.flags}
             for c in run.candidates

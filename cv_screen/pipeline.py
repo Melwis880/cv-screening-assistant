@@ -130,19 +130,23 @@ def file_sha256(path: Path, max_bytes: int | None = None) -> str | None:
         return None
 
 
-def candidate_id(path: Path, sha256: str | None) -> str:
+def candidate_id(path: Path, sha256: str | None, blind: bool = False) -> str:
     """File stem plus 8 hex digits of the file's SHA-256: two files never share outputs, and the
-    ID is safe as a file name and inside a Markdown link."""
+    ID is safe as a file name and inside a Markdown link. Blind: "cv-" plus 8 hex digits of the
+    file's hash and name, because file names often contain the applicant's name."""
+    if blind:
+        return "cv-" + hashlib.sha256(f"{sha256}/{path.name}".encode()).hexdigest()[:8]
     stem = re.sub(r"[^\w.-]+", "_", path.stem).strip("_").lstrip("-.")[:60] or "cv"
     digest = sha256 or hashlib.sha256(path.name.encode()).hexdigest()
     return f"{stem}-{digest[:8]}"
 
 
-def assign_ids(files: list[Path], limits: Limits | None = None) -> list[tuple[str, str | None]]:
+def assign_ids(files: list[Path], limits: Limits | None = None,
+               blind: bool = False) -> list[tuple[str, str | None]]:
     """(ID, SHA-256) for all files, checked for collisions before anything is screened."""
     max_bytes = (limits or Limits()).max_file_bytes
     shas = [file_sha256(f, max_bytes) for f in files]
-    ids = [candidate_id(f, sha) for f, sha in zip(files, shas, strict=True)]
+    ids = [candidate_id(f, sha, blind) for f, sha in zip(files, shas, strict=True)]
     first: dict[str, Path] = {}
     clashes = []
     for path, cid in zip(files, ids, strict=True):
@@ -184,10 +188,11 @@ def run_screening(
     workers: int = 4,
     limits: Limits | None = None,
     cache: ExtractionCache | None = None,
+    blind: bool = False,
 ) -> ScreeningRun:
     limits = limits or Limits()
     files = find_cv_files(folder)
-    ids = assign_ids(files, limits)
+    ids = assign_ids(files, limits, blind)
     if cache is not None:
         cache.purge_expired()
     started = time.perf_counter()

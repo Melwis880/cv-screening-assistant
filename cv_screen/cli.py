@@ -16,7 +16,7 @@ from cv_screen.extract import DEFAULT_MODEL, ClaudeExtractor, MockExtractor
 from cv_screen.job import load_job
 from cv_screen.parsing import Limits
 from cv_screen.pipeline import DuplicateCandidateError, run_screening
-from cv_screen.report import write_outputs
+from cv_screen.report import shown_error, write_outputs
 
 # Only the tool's own settings. Anything else in a .env (e.g. ANTHROPIC_BASE_URL or a proxy)
 # could send the API key and CV text elsewhere if `screen` runs in an untrusted folder.
@@ -139,7 +139,7 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
             cache = ExtractionCache(cache_dir or out_dir / ".cache" / "extractions",
                                     ttl_days=cache_ttl_days)
         result = run_screening(folder, job, extractor, as_of_date, model=model_name,
-                               workers=workers, limits=limits, cache=cache)
+                               workers=workers, limits=limits, cache=cache, blind=blind)
         paths = write_outputs(result, out_dir, blind=blind)
     except DuplicateCandidateError as exc:
         raise click.ClickException(term_safe(str(exc))) from exc
@@ -151,12 +151,13 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
     if result.failed:
         click.echo("Needs manual review:")
         for c in result.failed:
-            click.echo(f"  - {term_safe(c.source_file)}: {term_safe(c.error or '')}")
+            label = c.candidate_id if blind else c.source_file
+            click.echo(f"  - {term_safe(label)}: {term_safe(shown_error(c, blind))}")
     flagged = [c for c in result.candidates if c.flags]
     if flagged:
         click.echo("Check before relying on the extracted claims:")
         for c in flagged:
-            click.echo(f"  - {term_safe(c.source_file)}: "
+            click.echo(f"  - {term_safe(c.candidate_id if blind else c.source_file)}: "
                        + "; ".join(term_safe(f.split(":")[0]) for f in c.flags))
     if cache is not None:
         click.echo(f"Cache: {result.cache_hits} of {len(result.candidates)} CVs reused from the "

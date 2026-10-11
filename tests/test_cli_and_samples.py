@@ -72,17 +72,29 @@ def test_cli_mock_run_end_to_end(tmp_path):
     assert report["dropped_claims"] == 0  # well-formed CVs lose no claim to the evidence check
 
 
-def test_cli_blind_hides_names(tmp_path):
+def test_cli_blind_hides_names_including_file_names(tmp_path):
+    # Real file names often carry the applicant's name; blind mode must not show them either.
+    folder = tmp_path / "cvs"
+    folder.mkdir()
+    for path in sorted(SAMPLES.glob("cv0[1-3].*")):
+        (folder / path.name).write_bytes(path.read_bytes())
+    (folder / "Erika_Mustermann_Lebenslauf.pdf").write_bytes((SAMPLES / "cv01.pdf").read_bytes())
+    (folder / "Kim_Ng_CV.pdf").write_bytes(b"%PDF-1.4 broken")  # manual review, error text
     out = tmp_path / "out"
     result = CliRunner().invoke(main, [
-        "run", str(SAMPLES), "--job", str(ROOT / "job.yaml"), "--out", str(out), "--mock",
+        "run", str(folder), "--job", str(ROOT / "job.yaml"), "--out", str(out), "--mock",
         "--blind", "--as-of", "2026-10-01",
     ])
     assert result.exit_code == 0, result.output
-    assert "Erika Mustermann" not in (out / "shortlist.md").read_text()
-    assert "Erika Mustermann" not in (
-        out / "candidates" / f"{_ids_by_stem(out)['cv01']}.md").read_text()
-    assert "Erika Mustermann" not in (out / "shortlist.csv").read_text()
+    shown = [result.output, (out / "shortlist.md").read_text(), (out / "shortlist.csv").read_text()]
+    shown += [p.read_text() for p in (out / "candidates").iterdir()]
+    for text in shown:
+        for word in ("Erika", "Mustermann", "Lebenslauf", "Kim_Ng", "Kim Ng"):
+            assert word not in text, word
+    assert all(p.name.startswith("cv-") for p in (out / "candidates").iterdir())
+    report = json.loads((out / "run_report.json").read_text())
+    assert {r["source_file"] for r in report["per_cv"]} >= {"Erika_Mustermann_Lebenslauf.pdf",
+                                                             "Kim_Ng_CV.pdf"}
 
 
 def test_cli_real_mode_without_key_fails_clearly(tmp_path, monkeypatch):
