@@ -93,7 +93,12 @@ _GENDERED_WORDS_RE = re.compile(
     r"\b(male|female|man|woman|husband|wife|mother|father|mum|dad)\b(?!\s+tongue\b)",
     re.IGNORECASE,
 )
-_NAME_LINE_RE = re.compile(r"^[A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*){1,3}$")
+# Lower-case name particles ("Anna van der Berg", "Maria de la Cruz", "Omar bin Laden"): part of
+# a name line, but too common as ordinary words to be replaced everywhere in the text.
+_NAME_PARTICLES = {
+    "al", "bin", "binti", "da", "das", "de", "del", "della", "der", "di", "do", "dos", "du",
+    "el", "ibn", "la", "le", "ten", "ter", "van", "von", "y", "zu",
+}
 _GENERIC_TITLES = {"curriculum vitae", "cv", "resume", "résumé", "lebenslauf"}
 # Words that make a capitalised first line a headline, not a name ("Customer Support
 # Specialist", "Personal Details"). Taking such a line as the name would replace these words
@@ -214,21 +219,46 @@ def _guess_name_line(lines: list[str]) -> int | None:
         s = line.strip()
         if not s or s.lower() in _GENERIC_TITLES:
             continue
-        if (_NAME_LINE_RE.match(s) and not any(ch.isdigit() for ch in s)
-                and not _HEADLINE_WORDS & {w.strip(".,").lower() for w in s.split()}):
-            return idx
-        return None
+        return idx if _looks_like_name(s) else None
     return None
 
 
+def _looks_like_name(line: str) -> bool:
+    """2-4 capitalised words of letters (any script: "Özlem Yılmaz", "Łukasz Nowak"), plus
+    optional lower-case particles ("Anna van der Berg"); no digits, no CV heading or job word."""
+    words = [w.strip(",") for w in line.split()]
+    if len(words) > 7 or _HEADLINE_WORDS & {w.strip(".").lower() for w in words}:
+        return False
+    capitalised = 0
+    for word in words:
+        if word.lower() in _NAME_PARTICLES:
+            continue
+        if not word or word[0].islower() or not word[0].isalpha():
+            return False
+        if not all(ch.isalpha() or ch in "'’.-" for ch in word):
+            return False
+        capitalised += 1
+    return 2 <= capitalised <= 4
+
+
+_PARTICLE_ALT = "|".join(sorted(_NAME_PARTICLES, key=len, reverse=True))
+_TOK = re.escape(CANDIDATE_TOKEN)
+# Particles and initials next to a removed name go too ("van der [CANDIDATE]" would still hint
+# at origin), and a run of name parts becomes one token.
+_NAME_RUN_RE = re.compile(
+    rf"(?:\b(?:{_PARTICLE_ALT})\s+)*{_TOK}(?:\s+(?:(?:{_PARTICLE_ALT}|\w\.)\s+)*{_TOK})*",
+    re.IGNORECASE,
+)
+
+
 def _remove_name(body: str, name: str, result: RedactionResult) -> str:
-    tokens = [t for t in re.split(r"[\s,]+", name) if len(t.strip(".")) >= 2]
+    tokens = [t for t in re.split(r"[\s,]+", name)
+              if len(t.strip(".")) >= 2 and t.lower() not in _NAME_PARTICLES]
     for token in sorted(tokens, key=len, reverse=True):
         pattern = re.compile(r"\b" + re.escape(token) + r"(?:'s)?\b", re.IGNORECASE)
         body, n = pattern.subn(CANDIDATE_TOKEN, body)
         result.bump("name", n)
-    tok = re.escape(CANDIDATE_TOKEN)
-    return re.sub(rf"{tok}(?:\s+(?:\w\.\s+)?{tok})+", CANDIDATE_TOKEN, body)
+    return _NAME_RUN_RE.sub(CANDIDATE_TOKEN, body)
 
 
 def _match_case(replacement: str, original: str) -> str:

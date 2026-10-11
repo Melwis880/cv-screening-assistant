@@ -35,6 +35,18 @@ VARIANTS = [
         "dob": "30 December 2003", "nationality": "Exampleland", "gender": "Non-binary",
         "marital": "Divorced", "photo": "", "pronoun": "She", "possessive": "her",
     },
+    {   # names starting with a non-ASCII letter were not recognised as names before
+        "name": "Özlem Yılmaz", "address": "Ringstraße 5, 50667 Beispielstadt",
+        "email": "oezlem@example.com", "phone": "+49 221 0000 0000",
+        "dob": "5 May 1988", "nationality": "Demotopian", "gender": "Female",
+        "marital": "Married", "photo": "[Foto]", "pronoun": "She", "possessive": "her",
+    },
+    {   # nor were names with particles
+        "name": "Joost van der Berg", "address": "Teststraat 9, 1011 AB Voorbeeld",
+        "email": "joost.vdberg@example.nl", "phone": "+31 20 000 0000",
+        "dob": "1 July 1975", "nationality": "Samplish", "gender": "Male",
+        "marital": "Widowed", "photo": "Photo", "pronoun": "He", "possessive": "his",
+    },
 ]
 
 TEMPLATE = """{name}

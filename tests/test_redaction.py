@@ -1,3 +1,5 @@
+import pytest
+
 from cv_screen.extract import MockExtractor
 from cv_screen.parsing import parse_file
 from cv_screen.pipeline import screen_text
@@ -77,6 +79,17 @@ def test_headline_on_the_first_line_is_not_taken_as_name(job, as_of):
     assert CANDIDATE_TOKEN not in result.text
     cand = screen_text("c", "c.txt", cv, job, MockExtractor(), as_of)
     assert cand.counts.tier == "A"
+
+
+@pytest.mark.parametrize("name", ["Özlem Yılmaz", "Łukasz Nowak", "Joost van der Berg",
+                                  "María de la Cruz", "ERIKA MUSTERMANN", "محمد علي"])
+def test_first_line_names_in_any_script_and_with_particles_are_removed(name):
+    first, last = name.split()[0], name.split()[-1]
+    result = redact(f"{name}\nProfile\nMr van {last} drove the van der Firma Demo; {first} "
+                    "answered customer emails.\n")
+    assert result.name == name
+    assert first not in result.text and last not in result.text
+    assert "Mr" not in result.text and "[CANDIDATE] drove the van der Firma" in result.text
 
 
 def test_section_heading_is_not_taken_as_name():
