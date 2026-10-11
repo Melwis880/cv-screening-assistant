@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from pypdf import PdfReader
 
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".txt", ".md"}
@@ -44,6 +45,7 @@ class Limits:
     # invoke one form thousands of times. Samples use about 200 operators and 6 KB per file.
     max_pdf_ops: int = 300_000  # content-stream operators visited, forms included
     max_pdf_content_mb: float = 5  # decoded content parsed; a form counts each time it is used
+    max_docx_xml_mb: float = 10  # the DOCX's XML parts; the unpacked limit is mostly for images
 
     @property
     def max_file_bytes(self) -> int:
@@ -254,19 +256,115 @@ def _shown_chars(op: bytes, args: list) -> int:
 
 def _parse_docx(data: bytes, name: str, limits: Limits) -> str:
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        unpacked = sum(info.file_size for info in zf.infolist())
+        infos = zf.infolist()
+    unpacked = sum(info.file_size for info in infos)
     if unpacked > limits.max_unpacked_mb * MB:
         raise LimitError(f"{name} unpacks to {unpacked / MB:.1f} MB, over the "
                          f"{limits.max_unpacked_mb:g} MB limit; read it manually")
+    markup = sum(i.file_size for i in infos if i.filename.lower().endswith((".xml", ".rels")))
+    if markup > limits.max_docx_xml_mb * MB:
+        raise LimitError(f"{name} has {markup / MB:.1f} MB of document markup, over the "
+                         f"{limits.max_docx_xml_mb:g} MB limit; read it manually")
     doc = Document(io.BytesIO(data))
-    lines = []
-    for para in doc.paragraphs:
-        is_list = para.style is not None and "list" in (para.style.name or "").lower()
-        lines.append(f"- {para.text}" if is_list and para.text.strip() else para.text)
-    for table in doc.tables:
-        for row in table.rows:
-            lines.append(" | ".join(cell.text for cell in row.cells))
-    return "\n".join(lines)
+    reader = _DocxReader(name, limits, doc.styles.element)
+    reader.blocks(doc.element.body)
+    return "\n".join(reader.lines)
+
+
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+# Not text a reader sees: properties, deleted or moved-away text, and the second (VML) copy of
+# a text box that Word writes next to the DrawingML one.
+_DOCX_SKIP = {_W + "pPr", _W + "rPr", _W + "del", _W + "moveFrom", _MC_FALLBACK}
+
+
+class _DocxReader:
+    """Text of a DOCX body in reading order: paragraphs, table rows (one line each) and text
+    boxes (after the paragraph that anchors them), inside content controls too. Stops as soon
+    as the text is over `max_chars`, so a file of millions of empty paragraphs is cheap."""
+
+    def __init__(self, name: str, limits: Limits, styles: Any):
+        self.name = name
+        self.limits = limits
+        self.lines: list[str] = []
+        self.chars = -1  # "\n".join(lines) has one separator fewer than lines
+        # Style lookup once per document: python-docx scans every style per paragraph.
+        para_styles = [st for st in styles.style_lst if st.type == WD_STYLE_TYPE.PARAGRAPH]
+        self.styles = {st.styleId: "list" in (st.name_val or "").lower() for st in para_styles}
+        default = styles.default_for(WD_STYLE_TYPE.PARAGRAPH)
+        self.default_is_list = default is not None and "list" in (default.name_val or "").lower()
+
+    def add(self, line: str) -> None:
+        self.lines.append(line)
+        self.chars += len(line) + 1
+        if self.chars > self.limits.max_chars:
+            raise _too_long(self.name, self.chars, self.limits)
+
+    def blocks(self, parent: Any) -> None:
+        for child in parent.iterchildren():
+            if child.tag == _W + "p":
+                self.paragraph(child)
+            elif child.tag == _W + "tbl":
+                self.table(child)
+            elif child.tag == _W + "sdt":
+                self.blocks_in(child, "sdtContent")
+
+    def blocks_in(self, el: Any, tag: str) -> None:
+        content = el.find(_W + tag)
+        if content is not None:
+            self.blocks(content)
+
+    def paragraph(self, p: Any) -> None:
+        text, boxes = self.inline(p)
+        style = p.find(f"{_W}pPr/{_W}pStyle")
+        style_id = style.get(_W + "val") if style is not None else None
+        is_list = self.styles.get(style_id, self.default_is_list)
+        self.add(f"- {text}" if is_list and text.strip() else text)
+        for box in boxes:
+            self.blocks(box)
+
+    def table(self, tbl: Any) -> None:
+        for tr in tbl.iterchildren(_W + "tr"):
+            cells, boxes = [], []
+            for tc in tr.iterchildren(_W + "tc"):  # a merged cell is one <w:tc>: read once
+                texts = []
+                for p in tc.iterchildren(_W + "p"):
+                    text, found = self.inline(p)
+                    texts.append(text)
+                    boxes += found
+                cells.append("\n".join(texts))
+            self.add(" | ".join(cells))
+            for box in boxes:
+                self.blocks(box)
+
+    def inline(self, p: Any) -> tuple[str, list]:
+        """A paragraph's own text, and the text boxes anchored in it (read separately)."""
+        out: list[str] = []
+        boxes: list = []
+
+        def walk(el: Any) -> None:
+            for child in el:
+                tag = child.tag
+                if not isinstance(tag, str) or tag in _DOCX_SKIP:
+                    continue
+                if tag == _W + "t":
+                    out.append(child.text or "")
+                elif tag in (_W + "tab", _W + "ptab"):
+                    out.append("\t")
+                elif tag == _W + "br":
+                    out.append("\n" if child.get(_W + "type", "textWrapping") == "textWrapping"
+                               else "")
+                elif tag == _W + "cr":
+                    out.append("\n")
+                elif tag == _W + "noBreakHyphen":
+                    out.append("-")
+                elif tag == _W + "txbxContent":
+                    boxes.append(child)
+                elif tag != _W + "p":  # a nested paragraph belongs to something else
+                    walk(child)
+
+        walk(p)
+        return "".join(out), boxes
 
 
 def normalize_text(text: str) -> str:
