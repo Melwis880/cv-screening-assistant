@@ -110,6 +110,13 @@ def test_relevant_months_present_and_year_only(as_of):
     assert relevant_months([_role("2020", "2021")], as_of, []) == (13, 0)
 
 
+def test_relevant_months_future_role_does_not_subtract(as_of):
+    warnings = []
+    roles = [_role("2025-01", "2025-12"), _role("2027", "2028")]
+    assert relevant_months(roles, as_of, warnings) == (12, 0)
+    assert any("starts after" in w for w in warnings)
+
+
 def test_relevant_months_undated(as_of):
     warnings = []
     assert relevant_months([_role(None, None)], as_of, warnings) == (None, 1)

@@ -567,6 +567,7 @@ def relevant_months(
     """Total months in relevant roles, merging overlaps. None if relevant roles are all undated."""
     intervals: list[tuple[int, int]] = []
     undated = 0
+    cap = as_of.year * 12 + as_of.month + 1  # end of the as_of month
     for role in roles:
         if not role.relevant_to_job:
             continue
@@ -576,7 +577,11 @@ def relevant_months(
             undated += 1
             warnings.append(f"Relevant role '{role.title}' has missing or unclear dates.")
             continue
-        intervals.append((start, min(end, as_of.year * 12 + as_of.month + 1)))
+        if start >= cap:  # clipping would give a negative length and subtract months
+            warnings.append(f"Relevant role '{role.title}' starts after {as_of.isoformat()}; "
+                            "not counted.")
+            continue
+        intervals.append((start, min(end, cap)))
     if not intervals:
         return (None if undated else 0), undated
     intervals.sort()
