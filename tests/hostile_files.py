@@ -12,11 +12,14 @@ from docx import Document
 EMPTY_TEXT_OP = b"BT /F1 12 Tf () Tj ET "  # 5 operators that draw nothing
 
 
-def pdf(path: Path, page_ops: bytes, form_ops: bytes | None = None) -> None:
-    """A one-page PDF with Flate-compressed content (and optionally one form XObject)."""
+def pdf(path: Path, page_ops: bytes, form_ops: bytes | None = None,
+        form_names: tuple[bytes, ...] = (b"X0",)) -> None:
+    """A one-page PDF with Flate-compressed content and optionally one form XObject, which
+    the page's resources list under each of `form_names`."""
     font = b"/Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>"
     page = zlib.compress(page_ops, 9)
-    xobj = b" /XObject << /X0 5 0 R >>" if form_ops is not None else b""
+    names = b" ".join(b"/%s 5 0 R" % n for n in form_names)
+    xobj = b" /XObject << " + names + b" >>" if form_ops is not None else b""
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << " + font

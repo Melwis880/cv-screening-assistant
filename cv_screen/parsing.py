@@ -137,6 +137,8 @@ class _PdfBudget:
         self.max_bytes = int(limits.max_pdf_content_mb * MB)
         self.ops = 0
         self.bytes = 0
+        self.form_bytes = 0
+        self.forms: dict = {}  # object number -> decoded size, shared by all pages
         self.error: LimitError | None = None
 
     def charge_op(self) -> None:
@@ -149,6 +151,13 @@ class _PdfBudget:
         if self.bytes > self.max_bytes:
             self._fail(f"more than {self.max_bytes / MB:g} MB of page content")
 
+    def charge_form(self, size: int) -> None:
+        # Forms are decoded up front to learn their size, and pypdf keeps decoded streams in
+        # memory, so their total is capped too (else many large unused forms exhaust memory).
+        self.form_bytes += size
+        if self.form_bytes > self.max_bytes:
+            self._fail(f"more than {self.max_bytes / MB:g} MB of drawing forms")
+
     def check(self) -> None:
         if self.error:
             raise self.error
@@ -159,13 +168,13 @@ class _PdfBudget:
         raise self.error
 
 
-def _form_sizes(resources: Any, budget: _PdfBudget, seen: set | None = None,
-                sizes: dict | None = None) -> dict:
+def _form_sizes(resources: Any, budget: _PdfBudget, sizes: dict | None = None,
+                walked: set | None = None) -> dict:
     """Decoded size of every form XObject reachable from `resources`, by resource name (the
     largest if two forms share a name), so each use of a form can be charged before pypdf
-    parses it. Images are skipped without decoding."""
-    seen = set() if seen is None else seen
+    parses it. Each form is decoded once per file; images are skipped without decoding."""
     sizes = {} if sizes is None else sizes
+    walked = set() if walked is None else walked
     try:
         xobjects = resources.get_object().get("/XObject") if resources is not None else None
         items = list(xobjects.get_object().items()) if xobjects is not None else []
@@ -175,14 +184,14 @@ def _form_sizes(resources: Any, budget: _PdfBudget, seen: set | None = None,
         obj = ref.get_object()
         if not hasattr(obj, "get") or obj.get("/Subtype") != "/Form":
             continue
-        size = len(obj.get_data())
-        if size > budget.max_bytes:
-            budget.charge_bytes(size)  # one form alone is over the budget
-        sizes[name] = max(sizes.get(name, 0), size)
         key = getattr(ref, "idnum", id(obj))
-        if key not in seen:
-            seen.add(key)
-            _form_sizes(obj.get("/Resources"), budget, seen, sizes)
+        if key not in budget.forms:
+            budget.forms[key] = len(obj.get_data())
+            budget.charge_form(budget.forms[key])
+        sizes[name] = max(sizes.get(name, 0), budget.forms[key])
+        if key not in walked:  # once per page: no endless loop on a self-referencing form
+            walked.add(key)
+            _form_sizes(obj.get("/Resources"), budget, sizes, walked)
     return sizes
 
 
