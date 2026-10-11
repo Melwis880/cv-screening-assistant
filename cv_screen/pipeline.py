@@ -11,8 +11,16 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from cv_screen.cache import ExtractionCache
-from cv_screen.extract import ExtractionError, Extractor, Usage, build_profile
+from cv_screen.extract import (
+    ExtractionError,
+    Extractor,
+    Usage,
+    build_profile,
+    describe_error,
+)
 from cv_screen.job import JobSpec
 from cv_screen.matching import Counts, count, match_profile, sort_key
 from cv_screen.parsing import Limits, ParseError, find_cv_files, parse_cv
@@ -158,7 +166,8 @@ def _screen_file(path: Path, cid: str, sha: str | None, job: JobSpec, extractor:
         try:
             cand = screen_text(cid, path.name, parsed.text, job, extractor, as_of, cache, sha)
         except Exception as exc:  # one bad CV must not stop the run; it goes to manual review
-            cand = CandidateResult(cid, path.name, None, error=f"{type(exc).__name__}: {exc}")
+            detail = describe_error(exc) if isinstance(exc, ValidationError) else str(exc)
+            cand = CandidateResult(cid, path.name, None, error=f"{type(exc).__name__}: {detail}")
         cand.flags = parsed.warnings
     cand.seconds = time.perf_counter() - started
     return cand

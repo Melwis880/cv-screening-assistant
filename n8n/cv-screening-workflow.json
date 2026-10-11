@@ -27,7 +27,7 @@
     },
     {
       "parameters": {
-        "command": "cd /opt/cv-screening-assistant && . .venv/bin/activate && screen run /data/applications/junior-support --job job.yaml --out /data/screening/junior-support > /dev/null && cat /data/screening/junior-support/run_report.json"
+        "command": "cd /opt/cv-screening-assistant && . .venv/bin/activate && screen run /data/applications/junior-support --job job.yaml --out /data/screening/junior-support > /dev/null && python -c \"import json; r = json.load(open('/data/screening/junior-support/run_report.json')); print(json.dumps({k: r[k] for k in ('job', 'cvs', 'manual_review', 'tiers')}))\""
       },
       "id": "a1f0c6e2-0003-4c1e-9a10-000000000003",
       "name": "Run screening",

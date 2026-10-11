@@ -35,5 +35,10 @@ mailbox, not in the screening folder.
   `/data/screening/junior-support/.cache/extractions` (owner-only, entries deleted after 30
   days), so only new or changed CVs are sent to the API. Ranks can shift as new CVs arrive; a
   candidate's tier and criteria do not.
+- n8n stores the output of every execution. The *Run screening* node therefore prints only
+  the job title and the counts from `run_report.json` (CVs, manual review, tiers), not the
+  per-CV part with candidate IDs (file names, which often contain the applicant's name) and
+  error messages. Set n8n's execution data pruning (`EXECUTIONS_DATA_PRUNE`,
+  `EXECUTIONS_DATA_MAX_AGE`) to match your retention rule.
 - Status: the JSON follows the n8n workflow export format but has **not been tested against a
   live n8n instance** in this repo's build. Check node versions after import.

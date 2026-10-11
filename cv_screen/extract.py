@@ -54,6 +54,16 @@ class ExtractionError(Exception):
     """The extractor could not produce a valid profile for this CV."""
 
 
+def describe_error(exc: ValidationError) -> str:
+    """Where and what, without the offending values: pydantic's own message quotes the input,
+    which here is model output copied from the CV, and error messages reach the terminal,
+    run_report.json and (via n8n) workflow logs."""
+    problems = [f"{'.'.join(map(str, e['loc'])) or 'root'}: {e['msg']}"
+                for e in exc.errors(include_url=False, include_input=False)]
+    more = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
+    return f"{len(problems)} schema error(s): " + "; ".join(problems[:3]) + more
+
+
 @dataclass
 class Usage:
     input_tokens: int = 0
@@ -168,8 +178,10 @@ class ClaudeExtractor:
         text = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
         try:
             return _unescape(Extraction.model_validate(json.loads(text))), usage
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except json.JSONDecodeError as exc:  # message has a position, no content
             raise ExtractionError(f"invalid structured output: {exc}") from exc
+        except ValidationError as exc:
+            raise ExtractionError(f"invalid structured output: {describe_error(exc)}") from exc
 
     def _usage(self, response: Any) -> Usage:
         u = response.usage

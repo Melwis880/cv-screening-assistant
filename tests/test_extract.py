@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from cv_screen.extract import (
@@ -10,7 +12,9 @@ from cv_screen.extract import (
     quote_in_text,
     relevant_months,
 )
+from cv_screen.pipeline import run_screening
 from cv_screen.redact import redact
+from cv_screen.report import run_report
 from cv_screen.schema import Experience, Extraction, Skill
 from tests.fakes import GOOD_PAYLOAD, FakeClient
 
@@ -182,3 +186,19 @@ def test_default_client_has_a_request_timeout(monkeypatch):
     client = ClaudeExtractor().client
     assert client.timeout == 120.0
     assert client.max_retries == 3
+
+
+def test_schema_errors_do_not_quote_cv_text(job, as_of, tmp_path):
+    # Error text reaches the terminal, run_report.json and the n8n execution log.
+    secret = "Customer Support Agent at Example GmbH since 2019"
+    bad = {"skills": [{"name": "Zendesk", "evidence": secret, "extra": secret}],
+           "languages": secret, "education": [], "experience": []}
+    with pytest.raises(ExtractionError) as exc:
+        ClaudeExtractor(client=FakeClient(bad)).extract("x", job)
+    assert secret not in str(exc.value)
+    assert "skills.0.extra" in str(exc.value) and "languages" in str(exc.value)
+
+    (tmp_path / "cv.txt").write_text("Skills\nZendesk\n", encoding="utf-8")
+    run = run_screening(tmp_path, job, ClaudeExtractor(client=FakeClient(bad)), as_of)
+    report = json.dumps(run_report(run))
+    assert "schema error" in report and secret not in report
