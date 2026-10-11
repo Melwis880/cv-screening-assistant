@@ -87,8 +87,11 @@ _VERB_FIX = {"is": "are", "was": "were", "has": "have"}
 # text would still differ by gender.
 _HER_OBJECT_RE = re.compile(r"\bher\b(?=\s+(as|to|for|with|and|or|on|at|in|by)\b|\s*[.,;!?])",
                             re.IGNORECASE)
+# "mother tongue" names a native language, not a parent: keep it (else "German (mother tongue)"
+# loses its level and the language criterion becomes unknown).
 _GENDERED_WORDS_RE = re.compile(
-    r"\b(male|female|man|woman|husband|wife|mother|father|mum|dad)\b", re.IGNORECASE
+    r"\b(male|female|man|woman|husband|wife|mother|father|mum|dad)\b(?!\s+tongue\b)",
+    re.IGNORECASE,
 )
 _NAME_LINE_RE = re.compile(r"^[A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*){1,3}$")
 _GENERIC_TITLES = {"curriculum vitae", "cv", "resume", "résumé", "lebenslauf"}

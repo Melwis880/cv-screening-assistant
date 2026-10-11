@@ -1,4 +1,6 @@
+from cv_screen.extract import MockExtractor
 from cv_screen.parsing import parse_file
+from cv_screen.pipeline import screen_text
 from cv_screen.redact import CANDIDATE_TOKEN, redact
 from tests.conftest import SAMPLES
 
@@ -54,6 +56,15 @@ def test_titles_age_and_urls_are_removed():
     ).text
     for value in ["Ms", "Jane", "Aged 34", "mother", "https://"]:
         assert value not in text
+
+
+def test_mother_tongue_is_kept_and_counts_as_native(job, as_of):
+    cv = "Languages\nGerman (mother tongue)\nEnglish: C1\nSkills\nlive chat\n"
+    assert "German (mother tongue)" in redact(cv).text
+    assert "[REDACTED] of two" in redact("Mother of two.\n").text
+    cand = screen_text("c", "c.txt", cv, job, MockExtractor(), as_of)
+    german = next(r for r in cand.results if r.criterion_id == "german")
+    assert german.status == "met", german.note
 
 
 def test_section_heading_is_not_taken_as_name():
