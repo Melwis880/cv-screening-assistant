@@ -150,3 +150,45 @@ def test_docx_with_and_without_photo_and_header(tmp_path, job, as_of):
     b = screen_text("c", "b", parse_file(tmp_path / "b.docx"), job, MockExtractor(), as_of)
     assert a.redacted_text == b.redacted_text
     assert outcome(a) == outcome(b)
+
+
+GERMAN_TEMPLATE = """Lebenslauf
+{name}
+Anschrift: {address}
+Telefon: {phone} | E-Mail: {email}
+Geburtsdatum: {dob} | Geburtsort: {birthplace} | Staatsangehörigkeit: {nationality}
+Familienstand: {marital} | Geschlecht: {gender}
+Profile
+Calm support agent, {age}.
+Experience
+Customer Service Agent, Example Shop GmbH (fictional) - 03/2024 - present
+- Answered customer emails and live chat in Zendesk
+Languages
+German: C1
+English: B2
+Skills
+Zendesk, live chat, Excel
+"""
+
+GERMAN_VARIANTS = [
+    {"name": "Erika Mustermann", "address": "Musterstraße 1, 10115 Berlin",
+     "phone": "+49 30 0000 0100", "email": "erika@example.de", "dob": "14.03.1999",
+     "birthplace": "Beispielstadt", "nationality": "deutsch", "marital": "ledig",
+     "gender": "weiblich", "age": "27 Jahre alt"},
+    {"name": "Ahmet Öztürk", "address": "Probeweg 7, 80331 München",
+     "phone": "+49 89 0000 0200", "email": "a.oeztuerk@example.de", "dob": "02.01.1961",
+     "birthplace": "Demokent", "nationality": "türkisch", "marital": "verheiratet, 3 Kinder",
+     "gender": "männlich", "age": "65-year-old"},
+]
+
+
+def test_german_labels_and_free_text_age_are_removed(job, as_of):
+    runs = [screen_text("c", "c.txt", GERMAN_TEMPLATE.format(**v), job, MockExtractor(), as_of)
+            for v in GERMAN_VARIANTS]
+    assert runs[0].redacted_text == runs[1].redacted_text
+    assert outcome(runs[0]) == outcome(runs[1])
+    for v in GERMAN_VARIANTS:
+        for value in v.values():
+            for token in re.split(r"[\s,]+", value):
+                if len(token) > 3:
+                    assert token not in runs[0].redacted_text, token

@@ -55,6 +55,37 @@ PROTECTED_LABELS = {
     "children": "marital_status",
     "religion": "religion",
     "photo": "photo",
+    "d.o.b.": "age",
+    "civil status": "marital_status",
+    "spouse": "marital_status",
+    "ethnicity": "nationality",
+    "disability": "health",
+    # German CVs (the demo company is in Germany; "Lebenslauf" is a common title).
+    "vorname": "name",
+    "nachname": "name",
+    "familienname": "name",
+    "anschrift": "address",
+    "adresse": "address",
+    "straße": "address",
+    "strasse": "address",
+    "wohnort": "address",
+    "plz": "address",
+    "telefon": "contact",
+    "handy": "contact",
+    "mobil": "contact",
+    "geburtsdatum": "age",
+    "geburtstag": "age",
+    "geboren": "age",
+    "alter": "age",
+    "geburtsort": "nationality",
+    "staatsangehörigkeit": "nationality",
+    "staatsangehoerigkeit": "nationality",
+    "nationalität": "nationality",
+    "geschlecht": "gender",
+    "familienstand": "marital_status",
+    "kinder": "marital_status",
+    "konfession": "religion",
+    "foto": "photo",
 }
 
 _LABEL_RE = re.compile(
@@ -73,7 +104,14 @@ _PHONE_RE = re.compile(r"(?<![\w/])\+?\d[\d ()/.-]{7,}\d(?![\w/])")
 _DATE_LIKE_RE = re.compile(
     r"^(\d{1,2}[/.])?\d{4}([-/.]\d{1,2})?(\s*-\s*((\d{1,2}[/.])?\d{4}([-/.]\d{1,2})?))?$"
 )
-_AGE_RE = re.compile(r"\b(aged?\s+\d{2}|\d{2}\s*(years|yrs)\s*old)\b", re.IGNORECASE)
+_AGE_RE = re.compile(
+    r"\b(aged?\s+\d{2}"                                    # aged 34, age 34
+    r"|\d{2}[\s-]*(years?|yrs?)[\s-]*(old|of\s+age)"         # 34 years old, 34-year-old
+    r"|\d{2}\s*jahre\s*alt"                                 # 34 Jahre alt
+    r"|(born|geboren)(\s+(in|on|am))?\s+[^\n,;:]{0,20}?\d{4}"  # born in 1990, geboren am 1.2.1990
+    r"|jahrgang\s+\d{4})\b",
+    re.IGNORECASE,
+)
 _TITLE_RE = re.compile(r"\b(Mr|Mrs|Ms|Miss|Mx|Herr|Frau)\b\.?\s*")
 _PRONOUNS = {
     "he": "they", "she": "they", "him": "them", "his": "their", "her": "their",
