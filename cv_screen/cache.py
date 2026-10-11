@@ -37,6 +37,15 @@ class ExtractionCache:
     def __init__(self, directory: Path, ttl_days: float = DEFAULT_TTL_DAYS):
         self.dir = directory
         self.ttl_seconds = ttl_days * 86400
+        self._locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
+
+    def lock(self, key: str) -> threading.Lock:
+        """One lock per key, held from the cache lookup to the write: when the same CV is in
+        the folder twice, the second worker waits and reads the first one's entry instead of
+        paying for the same extraction again."""
+        with self._locks_guard:
+            return self._locks.setdefault(key, threading.Lock())
 
     @staticmethod
     def key(file_sha256: str, sent_text: str, extractor_identity: str) -> str:

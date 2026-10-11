@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import time
@@ -80,20 +81,21 @@ def screen_text(
     identity = getattr(extractor, "cache_identity", None)
     key = (cache.key(file_sha256, red.text, identity(job))
            if cache is not None and file_sha256 and identity else None)
-    extraction = cache.get(key) if key else None
-    if extraction is not None:
-        cand.cached, usage = True, Usage()
-    else:
-        try:
-            extraction, usage = extractor.extract(red.text, job)
-        except ExtractionError as exc:
-            cand.error = f"extraction failed: {exc}"
-            return cand
-        if key:
+    with cache.lock(key) if key else contextlib.nullcontext():
+        extraction = cache.get(key) if key else None
+        if extraction is not None:
+            cand.cached, usage = True, Usage()
+        else:
             try:
-                cache.put(key, extraction)
-            except OSError:
-                pass  # the cache only saves money; a failed write must not fail the CV
+                extraction, usage = extractor.extract(red.text, job)
+            except ExtractionError as exc:
+                cand.error = f"extraction failed: {exc}"
+                return cand
+            if key:
+                try:
+                    cache.put(key, extraction)
+                except OSError:
+                    pass  # the cache only saves money; a failed write must not fail the CV
     cand.usage = usage
     cand.profile = build_profile(candidate_id, source_file, red.text, extraction, as_of,
                                  relevance_keywords=job.relevant_experience.keywords)

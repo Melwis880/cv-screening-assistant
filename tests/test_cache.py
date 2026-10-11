@@ -40,6 +40,24 @@ def test_second_run_makes_no_api_calls(tmp_path, job, as_of):
     assert [c.results for c in first.candidates] == [c.results for c in second.candidates]
 
 
+def test_the_same_cv_twice_in_one_run_is_billed_once(tmp_path, job, as_of):
+    folder = tmp_path / "cvs"
+    folder.mkdir()
+    for name in ("cv.txt", "cv (1).txt", "cv-again.txt"):  # one attachment saved three times
+        (folder / name).write_text(CV_TEXT, encoding="utf-8")
+
+    def slow(_):
+        time.sleep(0.2)  # all workers start before the first call returns
+        return GOOD_PAYLOAD
+
+    client = FakeClient(slow)
+    run = run_screening(folder, job, ClaudeExtractor(client=client), as_of, workers=4,
+                        cache=ExtractionCache(tmp_path / "cache"))
+    assert len(client.messages.calls) == 1
+    assert sorted(c.cached for c in run.candidates) == [False, True, True]
+    assert len({str(c.results) for c in run.candidates}) == 1
+
+
 def test_only_new_or_changed_cvs_are_billed(tmp_path, job, as_of):
     folder, cache = _folder(tmp_path), ExtractionCache(tmp_path / "cache")
     _run(folder, job, as_of, cache)
