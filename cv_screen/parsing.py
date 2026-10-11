@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import math
 import re
+import unicodedata
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -368,7 +369,11 @@ class _DocxReader:
 
 
 def normalize_text(text: str) -> str:
-    """Normalise whitespace and dash variants; keep one item per line."""
+    """Normalise whitespace and dash variants; keep one item per line. Invisible format
+    characters (soft hyphens from PDF hyphenation, zero-width spaces, bidi controls, BOM) are
+    dropped: they split words ("Zen\u00addesk" would not match "zendesk") and can reorder how
+    text is displayed."""
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace(" ", " ")
     text = re.sub(r"[‐-―−]", "-", text)

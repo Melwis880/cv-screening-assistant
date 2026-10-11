@@ -1,7 +1,9 @@
 import pytest
 from docx import Document
 
+from cv_screen.extract import MockExtractor
 from cv_screen.parsing import ParseError, find_cv_files, normalize_text, parse_file
+from cv_screen.pipeline import screen_text
 from tests.conftest import SAMPLES
 
 
@@ -64,3 +66,11 @@ def test_find_cv_files_filters_and_sorts(tmp_path):
     for name in ["b.pdf", "a.docx", "job.yaml", ".hidden.pdf", "README.md", "notes.txt"]:
         (tmp_path / name).write_text("x")
     assert [p.name for p in find_cv_files(tmp_path)] == ["a.docx", "b.pdf", "notes.txt"]
+
+
+def test_invisible_format_characters_do_not_split_words(job, as_of):
+    raw = "Skills\nZen\u00addesk, live\u200bchat\nLanguages\n\u202eGerman: C1\ufeff\n"
+    text = normalize_text(raw)
+    assert text == "Skills\nZendesk, livechat\nLanguages\nGerman: C1\n"
+    cand = screen_text("c", "c.txt", text, job, MockExtractor(), as_of)
+    assert {r.criterion_id: r.status for r in cand.results}["helpdesk_tool"] == "met"
