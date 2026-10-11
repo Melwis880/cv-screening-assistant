@@ -1,0 +1,175 @@
+"""Command line interface: `screen run samples/ --job job.yaml`."""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+import unicodedata
+from datetime import date
+from pathlib import Path
+
+import click
+
+from cv_screen.cache import DEFAULT_TTL_DAYS, ExtractionCache
+from cv_screen.extract import DEFAULT_MODEL, ClaudeExtractor, MockExtractor
+from cv_screen.job import load_job
+from cv_screen.parsing import Limits
+from cv_screen.pipeline import DuplicateCandidateError, run_screening
+from cv_screen.report import shown_error, write_outputs
+
+# Only the tool's own settings. Anything else in a .env (e.g. ANTHROPIC_BASE_URL or a proxy)
+# could send the API key and CV text elsewhere if `screen` runs in an untrusted folder.
+DOTENV_ALLOWED = {"ANTHROPIC_API_KEY", "CV_SCREEN_MODEL", "MOCK_LLM"}
+
+
+def _load_dotenv(path: Path = Path(".env")) -> None:
+    """Minimal .env reader for DOTENV_ALLOWED; existing environment variables win."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key in DOTENV_ALLOWED and value:
+            os.environ.setdefault(key, value.strip('"').strip("'"))
+
+
+def term_safe(text: str) -> str:
+    """Text from a CV file (names, file names, errors) for the terminal: control and format
+    characters (escape sequences, bidi overrides, line separators) become '?'."""
+    return "".join("?" if unicodedata.category(ch) in {"Cc", "Cf", "Zl", "Zp"} else ch
+                   for ch in text)
+
+
+class _TermSafeFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return term_safe(super().format(record))
+
+
+class _StderrHandler(logging.StreamHandler):
+    """Writes to whatever sys.stderr is at the time of the log call."""
+
+    @property
+    def stream(self):  # type: ignore[override]
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, value) -> None:
+        pass
+
+
+def _route_library_warnings() -> None:
+    """pypdf logs warnings that can quote a PDF's content; print them sanitised."""
+    log = logging.getLogger("pypdf")
+    if not any(isinstance(h.formatter, _TermSafeFormatter) for h in log.handlers):
+        handler = _StderrHandler()
+        handler.setFormatter(_TermSafeFormatter("warning (%(name)s): %(message)s"))
+        log.addHandler(handler)
+        log.propagate = False
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@click.group()
+def main() -> None:
+    """CV screening assistant. The tool recommends, the human decides."""
+    _load_dotenv()
+    _route_library_warnings()
+
+
+@main.command()
+@click.argument("folder", type=click.Path(exists=True, path_type=Path))
+@click.option("--job", "job_path", required=True, type=click.Path(exists=True, path_type=Path),
+              help="Job description YAML with must-have and nice-to-have criteria.")
+@click.option("--out", "out_dir", default="out", show_default=True,
+              type=click.Path(path_type=Path), help="Output folder (contains personal data).")
+@click.option("--mock/--real", "mock", default=None,
+              help="Offline rule-based extractor instead of the Claude API. "
+                   "Default: real unless MOCK_LLM=1.")
+@click.option("--model", default=None,
+              help=f"Claude model for extraction. Default: $CV_SCREEN_MODEL or {DEFAULT_MODEL}.")
+@click.option("--as-of", "as_of", default=None,
+              help="Count experience up to this date (YYYY-MM-DD). Default: today.")
+@click.option("--blind", is_flag=True,
+              help="Hide candidate names in the shortlist and summaries too.")
+@click.option("--workers", default=4, show_default=True, help="Parallel API calls.")
+@click.option("--max-file-mb", default=Limits.max_file_mb, show_default=True, type=float,
+              help="Larger files go to manual review unread.")
+@click.option("--max-pages", default=Limits.max_pdf_pages, show_default=True, type=int,
+              help="PDFs with more pages go to manual review.")
+@click.option("--max-chars", default=Limits.max_chars, show_default=True, type=int,
+              help="CVs with more text go to manual review and are not sent to the model.")
+@click.option("--cache/--no-cache", "use_cache", default=None,
+              help="Reuse extraction results of unchanged CVs from earlier runs. "
+                   "Default: on in real mode, off in mock mode.")
+@click.option("--cache-dir", type=click.Path(path_type=Path), default=None,
+              help="Default: OUT/.cache/extractions (owner-only).")
+@click.option("--cache-ttl-days", type=float, default=DEFAULT_TTL_DAYS, show_default=True,
+              help="Older cache entries are deleted at the start of a run.")
+def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: str | None,
+        as_of: str | None, blind: bool, workers: int, max_file_mb: float, max_pages: int,
+        max_chars: int, use_cache: bool | None, cache_dir: Path | None,
+        cache_ttl_days: float) -> None:
+    """Screen every PDF/DOCX/TXT CV in FOLDER against the job and write a ranked shortlist."""
+    job = load_job(job_path)
+    if mock is None:
+        mock = _env_flag("MOCK_LLM")
+    as_of_date = date.fromisoformat(as_of) if as_of else date.today()
+    if mock:
+        extractor, model_name = MockExtractor(), None
+    else:
+        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+            raise click.UsageError(
+                "No ANTHROPIC_API_KEY set. Put it in .env (see .env.example) or run with "
+                "--mock / MOCK_LLM=1 for the offline demo."
+            )
+        model_name = model or os.environ.get("CV_SCREEN_MODEL") or DEFAULT_MODEL
+        extractor = ClaudeExtractor(model=model_name)
+
+    click.echo(f"Screening {folder} for '{job.title}' with the {extractor.name} extractor"
+               + (f" ({model_name})" if model_name else "") + " ...")
+    try:
+        limits = Limits(max_file_mb=max_file_mb, max_pdf_pages=max_pages, max_chars=max_chars)
+        cache = None
+        if (not mock) if use_cache is None else use_cache:
+            cache = ExtractionCache(cache_dir or out_dir / ".cache" / "extractions",
+                                    ttl_days=cache_ttl_days)
+        result = run_screening(folder, job, extractor, as_of_date, model=model_name,
+                               workers=workers, limits=limits, cache=cache, blind=blind)
+        paths = write_outputs(result, out_dir, blind=blind)
+    except DuplicateCandidateError as exc:
+        raise click.ClickException(term_safe(str(exc))) from exc
+
+    tiers = result.tiers
+    click.echo(f"Screened {len(result.ranked)} of {len(result.candidates)} CVs in "
+               f"{result.wall_seconds:.1f}s. Tier A: {tiers['A']}, B: {tiers['B']}, "
+               f"C: {tiers['C']}, manual review: {len(result.failed)}.")
+    if result.failed:
+        click.echo("Needs manual review:")
+        for c in result.failed:
+            label = c.candidate_id if blind else c.source_file
+            click.echo(f"  - {term_safe(label)}: {term_safe(shown_error(c, blind))}")
+    flagged = [c for c in result.candidates if c.flags]
+    if flagged:
+        click.echo("Check before relying on the extracted claims:")
+        for c in flagged:
+            click.echo(f"  - {term_safe(c.candidate_id if blind else c.source_file)}: "
+                       + "; ".join(term_safe(f.split(":")[0]) for f in c.flags))
+    if cache is not None:
+        click.echo(f"Cache: {result.cache_hits} of {len(result.candidates)} CVs reused from the "
+                   f"cache (no API call); entries older than {cache_ttl_days:g} days are deleted.")
+    if result.usage.input_tokens:
+        cost = result.usage.cost_usd
+        click.echo(f"Tokens: {result.usage.input_tokens} in / {result.usage.output_tokens} out"
+                   + (f", cost ${cost:.4f}" if cost is not None else ", cost unknown for model"))
+    click.echo(f"Shortlist: {paths['shortlist_md']}  (also {paths['shortlist_csv'].name}, "
+               f"candidates/, emails/, run_report.json)")
+    click.echo("Reminder: the tool recommends, you decide. No emails were sent.")
+
+
+if __name__ == "__main__":
+    main()

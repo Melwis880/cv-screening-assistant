@@ -1,0 +1,91 @@
+# Demo job description. Company and role are fictional.
+#
+# Criterion types (all rules are evaluated in code, see cv_screen/matching.py):
+#   language          one language, CEFR min_level (A1..C2, "native" counts above C2)
+#   language_any      best of several languages, CEFR min_level
+#   experience_years  years of relevant experience (see relevant_experience) >= min_years;
+#                     "partly" from partly_min_years
+#   skill             any term of any_of found in the extracted skills -> met;
+#                     any term of partly_any_of -> partly
+#   education         highest completed level >= min_level
+#                     (secondary < vocational < bachelor < master < doctorate);
+#                     a qualification in progress at that level -> partly
+
+title: Junior Customer Support Specialist
+company: Northwind Goods (fictional 20-person online shop)
+location: Remote within Germany, team language German, many customers write in English
+
+relevant_experience:
+  description: >-
+    Customer-facing work where the main task is helping customers: customer service or
+    support, help desk, call centre, retail sales floor or cashier, hotel or hospitality
+    front desk, or a virtual assistant handling customer messages.
+  keywords:
+    - customer
+    - support
+    - service desk
+    - help desk
+    - helpdesk
+    - call centre
+    - call center
+    - contact centre
+    - retail
+    - sales assistant
+    - cashier
+    - front desk
+    - receptionist
+    - virtual assistant
+
+criteria:
+  must_have:
+    - id: english
+      label: English at C1 or above
+      type: language
+      language: English
+      min_level: C1
+
+    - id: german
+      label: German at B2 or above
+      type: language
+      language: German
+      min_level: B2
+
+    - id: experience
+      label: At least 1 year of customer-facing experience
+      type: experience_years
+      min_years: 1
+      partly_min_years: 0.5
+
+    - id: written_support
+      label: Written customer communication (email, chat or tickets)
+      type: skill
+      any_of: [email support, e-mail support, customer emails, live chat, chat support, ticketing, tickets]
+      partly_any_of: [phone support, hotline, telephone]
+
+  nice_to_have:
+    - id: helpdesk_tool
+      label: Experience with a helpdesk tool
+      type: skill
+      any_of: [zendesk, freshdesk, gorgias, help scout, intercom]
+      partly_any_of: [crm, hubspot, salesforce]
+
+    - id: ecommerce_platform
+      label: Experience with an e-commerce platform
+      type: skill
+      any_of: [shopify, woocommerce, shopware, magento]
+
+    - id: third_language
+      label: A third customer language (French, Spanish, Italian, Dutch or Polish) at B1+
+      type: language_any
+      languages: [French, Spanish, Italian, Dutch, Polish]
+      min_level: B1
+
+    - id: education
+      label: Completed vocational training or higher
+      type: education
+      min_level: vocational
+
+    - id: spreadsheets
+      label: Basic spreadsheet skills
+      type: skill
+      any_of: [excel, google sheets, spreadsheets]
