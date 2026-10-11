@@ -13,6 +13,11 @@ Demo scenario: a 20-person online shop hiring a *Junior Customer Support Special
 CVs in [`samples/`](samples/) are synthetic and fictional (placeholder names, `example.com`
 addresses, a "SYNTHETIC CV" footer on every page).
 
+![Terminal output of "MOCK_LLM=1 screen run samples/ --job job.yaml": 20 of 20 CVs screened, tier A 7, B 9, C 4, no emails sent. Below it, the rendered out/shortlist.md with the "tool recommends, the hiring manager decides" notice, the printed ranking rule and the tier A table: rank, candidate ID, name marked "not used for matching", must-haves and nice-to-haves met, unknowns and reasons.](docs/demo-run.png)
+
+*Mock-mode demo run on the synthetic samples, cut after tier A. Regenerate with
+`python scripts/render_demo_image.py`.*
+
 ## Quickstart
 
 ```bash
@@ -290,6 +295,7 @@ pip install -e ".[dev]"
 ruff check .
 pytest -q                               # 218 offline tests, no API key needed
 python scripts/generate_samples.py      # regenerate samples (deterministic)
+python scripts/render_demo_image.py     # regenerate docs/demo-run.png (needs markdown, playwright)
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, the test suite, a reproducibility check of the
