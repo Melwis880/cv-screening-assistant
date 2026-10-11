@@ -78,7 +78,7 @@ def parse_cv(path: Path, limits: Limits | None = None) -> ParsedCV:
         if suffix == ".pdf":
             text = _parse_pdf(data, path.name, limits, warnings)
         elif suffix == ".docx":
-            text = _parse_docx(data, path.name, limits)
+            text = _parse_docx(data, path.name, limits, warnings)
         else:
             text = data.decode("utf-8")
     except ParseError:
@@ -126,6 +126,13 @@ def _parse_pdf(data: bytes, name: str, limits: Limits, warnings: list[str]) -> s
             "CV, or text meant to steer the screening. Compare the PDF with the extracted "
             "claims before relying on them.")
     return "\n".join(parts)
+
+
+def _docx_hidden_warning(hidden: int, shown: int) -> str:
+    return (f"Hidden text in the DOCX: {hidden} of {shown} characters are not visible in Word "
+            "(hidden, white without shading, or under 1 pt). This can be leftover template "
+            "text, or text meant to steer the screening. Compare the document with the "
+            "extracted claims before relying on them.")
 
 
 class _PdfBudget:
@@ -264,7 +271,7 @@ def _shown_chars(op: bytes, args: list) -> int:
                for i in items if isinstance(i, str | bytes))
 
 
-def _parse_docx(data: bytes, name: str, limits: Limits) -> str:
+def _parse_docx(data: bytes, name: str, limits: Limits, warnings: list[str]) -> str:
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         infos = zf.infolist()
     unpacked = sum(info.file_size for info in infos)
@@ -278,6 +285,8 @@ def _parse_docx(data: bytes, name: str, limits: Limits) -> str:
     doc = Document(io.BytesIO(data))
     reader = _DocxReader(name, limits, doc.styles.element)
     reader.blocks(doc.element.body)
+    if reader.hidden >= HIDDEN_TEXT_MIN_CHARS:
+        warnings.append(_docx_hidden_warning(reader.hidden, reader.hidden + reader.visible))
     return "\n".join(reader.lines)
 
 
@@ -291,13 +300,19 @@ _DOCX_SKIP = {_W + "pPr", _W + "rPr", _W + "del", _W + "moveFrom", _MC_FALLBACK}
 class _DocxReader:
     """Text of a DOCX body in reading order: paragraphs, table rows (one line each) and text
     boxes (after the paragraph that anchors them), inside content controls too. Stops as soon
-    as the text is over `max_chars`, so a file of millions of empty paragraphs is cheap."""
+    as the text is over `max_chars`, so a file of millions of empty paragraphs is cheap.
+
+    Like `_Visibility` for PDFs, it counts characters Word does not show: runs marked hidden,
+    under 1 pt, or white with no shading behind them (run, paragraph or cell). A heuristic
+    for a warning; text coloured by a style is not checked."""
 
     def __init__(self, name: str, limits: Limits, styles: Any):
         self.name = name
         self.limits = limits
         self.lines: list[str] = []
         self.chars = -1  # "\n".join(lines) has one separator fewer than lines
+        self.hidden = 0
+        self.visible = 0
         # Style lookup once per document: python-docx scans every style per paragraph.
         para_styles = [st for st in styles.style_lst if st.type == WD_STYLE_TYPE.PARAGRAPH]
         self.styles = {st.styleId: "list" in (st.name_val or "").lower() for st in para_styles}
@@ -325,7 +340,7 @@ class _DocxReader:
             self.blocks(content)
 
     def paragraph(self, p: Any) -> None:
-        text, boxes = self.inline(p)
+        text, boxes = self.inline(p, _shaded(p.find(f"{_W}pPr/{_W}shd")))
         style = p.find(f"{_W}pPr/{_W}pStyle")
         style_id = style.get(_W + "val") if style is not None else None
         is_list = self.styles.get(style_id, self.default_is_list)
@@ -338,8 +353,10 @@ class _DocxReader:
             cells, boxes = [], []
             for tc in tr.iterchildren(_W + "tc"):  # a merged cell is one <w:tc>: read once
                 texts = []
+                cell_shaded = _shaded(tc.find(f"{_W}tcPr/{_W}shd"))
                 for p in tc.iterchildren(_W + "p"):
-                    text, found = self.inline(p)
+                    shaded = cell_shaded or _shaded(p.find(f"{_W}pPr/{_W}shd"))
+                    text, found = self.inline(p, shaded)
                     texts.append(text)
                     boxes += found
                 cells.append("\n".join(texts))
@@ -347,18 +364,25 @@ class _DocxReader:
             for box in boxes:
                 self.blocks(box)
 
-    def inline(self, p: Any) -> tuple[str, list]:
+    def inline(self, p: Any, shaded: bool = False) -> tuple[str, list]:
         """A paragraph's own text, and the text boxes anchored in it (read separately)."""
         out: list[str] = []
         boxes: list = []
 
-        def walk(el: Any) -> None:
+        def walk(el: Any, hidden: bool = False) -> None:
             for child in el:
                 tag = child.tag
                 if not isinstance(tag, str) or tag in _DOCX_SKIP:
                     continue
                 if tag == _W + "t":
                     out.append(child.text or "")
+                    n = len("".join((child.text or "").split()))
+                    if hidden:
+                        self.hidden += n
+                    else:
+                        self.visible += n
+                elif tag == _W + "r":
+                    walk(child, _run_hidden(child.find(_W + "rPr"), shaded))
                 elif tag in (_W + "tab", _W + "ptab"):
                     out.append("\t")
                 elif tag == _W + "br":
@@ -371,10 +395,38 @@ class _DocxReader:
                 elif tag == _W + "txbxContent":
                     boxes.append(child)
                 elif tag != _W + "p":  # a nested paragraph belongs to something else
-                    walk(child)
+                    walk(child, hidden)
 
         walk(p)
         return "".join(out), boxes
+
+
+_OFF = {"0", "false", "off"}
+_NO_FILL = {None, "auto", "FFFFFF", "ffffff"}
+
+
+def _shaded(shd: Any) -> bool:
+    """A w:shd with a non-white fill: white text on it is visible."""
+    return shd is not None and shd.get(_W + "fill") not in _NO_FILL
+
+
+def _run_hidden(rpr: Any, shaded: bool) -> bool:
+    if rpr is None:
+        return False
+    vanish = rpr.find(_W + "vanish")
+    if vanish is not None and vanish.get(_W + "val", "true") not in _OFF:
+        return True
+    size = rpr.find(_W + "sz")
+    half_points = size.get(_W + "val") if size is not None else None
+    if half_points and half_points.isdigit() and int(half_points) < 2:
+        return True  # under 1 pt
+    color = rpr.find(_W + "color")
+    white = color is not None and (
+        (color.get(_W + "val") or "").upper() == "FFFFFF"
+        or color.get(_W + "themeColor") in {"background1", "light1"})
+    highlight = rpr.find(_W + "highlight")
+    return (white and not shaded and not _shaded(rpr.find(_W + "shd"))
+            and (highlight is None or highlight.get(_W + "val") in (None, "none")))
 
 
 def normalize_text(text: str) -> str:
