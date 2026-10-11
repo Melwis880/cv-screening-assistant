@@ -100,6 +100,16 @@ Adversarial review of everything since `main`; PoC first, then fix + test.
 - [x] Left-out items documented (BUILD_LOG "Security review 2", README Limitations)
 - [x] README, CASE_STUDY, BUILD_LOG, DECISIONS updated
 
+## Phase 11 – Public-release prep (2026-10-11)
+Presentation and consistency pass only: no behaviour, default model or DECISIONS entries changed.
+- [x] MIT `LICENSE`, README License section, SPDX `license` in pyproject.toml
+- [x] README / CASE_STUDY checked against the code; mock quickstart run as written; numbers labelled demo data / estimate
+- [x] Relative links in all Markdown files resolve
+- [x] Demo image `docs/demo-run.png` from a real mock run, with alt text
+- [x] Full-history scan for secrets and personal data (gitleaks + custom scan): nothing found
+- [x] `.gitignore` covers `.env`, caches and `out/`; `.env.example` has no values
+- [ ] PR opened, CI green on the PR
+
 ## Final state (2026-10-11, after the optimization pass and security review 2)
 
 **Done**

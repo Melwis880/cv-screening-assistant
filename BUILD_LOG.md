@@ -214,6 +214,28 @@ candidate IDs; regex run time of the new age and name patterns on 30,000-charact
 - The first German invariance test failed for a bad reason: one variant said "a 65-year-old", and
   the redaction (correctly) kept the article "a". The test data, not the code, was wrong.
 
+## Public-release prep (2026-10-11)
+Presentation and consistency pass before making the repo public; no behaviour change.
+- **License:** MIT. `license = { text = "MIT" }` built, but setuptools 84 warned
+  ``WARNING `project.license` as a TOML table is deprecated ... By 2027-Feb-18, you need to
+  update your project``; switched to the SPDX string `license = "MIT"` with
+  `license-files = ["LICENSE"]` (needs setuptools>=77). The wheel now carries
+  `License-Expression: MIT` and the LICENSE file.
+- **Docs checked against the code, not trusted:** the mock quickstart ran exactly as written
+  (A 7 / B 9 / C 4). Gaps found: `cv_screen/job.py` was missing from the module table, and the
+  README did not say that `--blind` keeps the name in the email drafts (by design, see
+  DECISIONS.md). CASE_STUDY labelled mock-mode numbers "measured"; they are now "demo data", so
+  nobody reads them as real-mode results. Prompt sizes re-measured: system prompt 2,069 +
+  schema 2,676 characters, user message 842 characters on average (min 522, max 1,042).
+- **Demo image:** `docs/demo-run.png` from a real mock run (`scripts/render_demo_image.py`).
+  Playwright's Python package expected a newer headless shell than the one installed
+  (`Executable doesn't exist at .../chromium_headless_shell-1243/...`); passing the existing
+  Chromium via `CHROMIUM_PATH` avoided a browser download.
+- **History scan (all 42 commits):** gitleaks found nothing; a custom pass over every blob
+  (including text inside the sample PDFs/DOCX) found no API keys or tokens, only
+  example-domain email addresses and `0000`-pattern phone numbers. Three test fixtures use
+  `example.de` / `example.nl`, which are not reserved example domains (fictional, left as is).
+
 ## Post hooks
 - "Tell the model to ignore gender" is not a fairness control. "The model never receives it, and a
   test proves the text is identical" is.
@@ -236,6 +258,8 @@ candidate IDs; regex run time of the new age and name patterns on 30,000-charact
   as diverse as the people you write into it.
 
 ## Screenshots / GIFs to capture
+- **Done:** `docs/demo-run.png` (terminal output + rendered shortlist, tier A), used in the
+  README; regenerate with `python scripts/render_demo_image.py`.
 - **Terminal GIF of the demo run:** `MOCK_LLM=1 screen run samples/ --job job.yaml --as-of 2026-10-01`
   (shows the one-line summary and "No emails were sent").
 - **Rendered `out/shortlist.md`** on GitHub or in VS Code preview: the three tiers and the printed
