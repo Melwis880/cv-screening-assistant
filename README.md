@@ -33,9 +33,9 @@ Output goes to `out/` (git-ignored, because it contains personal data):
 |---|---|
 | `out/shortlist.md` | Ranked shortlist in three tiers, criteria table, ranking rule, next steps |
 | `out/shortlist.csv` | Same, one row per candidate, with status and evidence per criterion. Cells starting with `=`, `+`, `-`, `@`, tab or CR get a leading `'`, so CV text such as `=HYPERLINK(...)` opens as text, not as a formula |
-| `out/candidates/<id>.md` | `<id>` is the file name plus 8 characters of the file's SHA-256 (e.g. `cv01-94ae5c33`), so `cv01.pdf` and `cv01.docx` never overwrite each other. One-page summary: criteria with evidence quotes, extracted profile, questions to ask, warnings |
+| `out/candidates/<id>.md` | `<id>` is the file name plus 8 characters of the file's SHA-256 (e.g. `cv01-94ae5c33`), so `cv01.pdf` and `cv01.docx` never overwrite each other; with `--blind` it is `cv-` plus 8 hex characters, so a file name like `Erika_Mustermann_CV.pdf` does not show. One-page summary: criteria with evidence quotes, extracted profile, questions to ask, warnings |
 | `out/emails/<id>.md` | Draft reply with three variants (invite / ask for missing info / decline), never sent |
-| `out/run_report.json` | Timing, tokens and cost of the run |
+| `out/run_report.json` | Timing, tokens and cost of the run; the source file of each candidate ID |
 
 The Markdown files are meant to be viewed rendered (VS Code preview, GitHub, any Markdown
 viewer). Text that comes from a CV or from the model is escaped (`< > [ ] ( ) ! * _ \ | ``),
@@ -73,7 +73,7 @@ the reasoning behind each choice.
 
 | Module | Responsibility |
 |---|---|
-| `cv_screen/parsing.py` | PDF (pypdf), DOCX (python-docx, incl. tables), TXT/MD to normalised text |
+| `cv_screen/parsing.py` | PDF (pypdf, with a per-file work budget), DOCX (paragraphs, tables, text boxes and content controls in reading order), TXT/MD to normalised text; hidden-text flags |
 | `cv_screen/redact.py` | Remove protected attributes; return the name separately for manager-facing output |
 | `cv_screen/schema.py` | Pydantic models; strict JSON schema for structured outputs |
 | `cv_screen/extract.py` | `ClaudeExtractor`, `MockExtractor`, quote verification, experience calculation, token cost |
@@ -95,7 +95,8 @@ screen run FOLDER --job job.yaml [options]
   --mock / --real     offline mock extractor or Claude API (default: real unless MOCK_LLM=1)
   --model TEXT        Claude model (default: $CV_SCREEN_MODEL or claude-haiku-4-5-20251001)
   --as-of YYYY-MM-DD  count experience up to this date (default: today)
-  --blind             hide names in shortlist and summaries as well
+  --blind             hide names and file names in shortlist, CSV, summaries and terminal
+                      (run_report.json keeps the ID -> file mapping)
   --workers N         parallel API calls (default: 4)
   --max-file-mb MB    larger files go to manual review unread (default: 5)
   --max-pages N       PDFs with more pages go to manual review (default: 10)
@@ -107,10 +108,15 @@ screen run FOLDER --job job.yaml [options]
 
 Input limits protect against oversized or hostile uploads (cost, memory, zip bombs). A CV over
 a limit is never rejected: it is listed under "Needs manual review" with the reason. DOCX files
-that unpack to more than 50 MB are treated the same way.
+that unpack to more than 50 MB, or whose XML parts are over 10 MB, are treated the same way,
+and so are PDFs that would make the parser do more than 300,000 drawing operations or parse
+more than 5 MB of page content (a small PDF can hold megabytes of compressed drawing commands,
+or draw one form thousands of times; the samples need about 200 operations and 6 KB). DOCX
+reading stops as soon as the text is over `--max-chars`. Symbolic links in the CV folder are
+not followed (manual review). API calls time out after 120 s per attempt, with 3 retries.
 
 The run summary in the terminal lists the CVs that need manual review and the ones with a file
-warning (e.g. hidden PDF text). File names, errors and PDF library warnings can contain
+warning (e.g. hidden PDF or DOCX text). File names, errors and PDF library warnings can contain
 anything an applicant put in the file name or PDF, so control and format characters (terminal
 escape sequences, bidi overrides, line separators) are printed as `?`.
 
@@ -171,18 +177,23 @@ printed at the top of every shortlist.
 **Protected attributes are removed before matching, and a test proves it.**
 
 - Before extraction, `redact.py` removes: name (header line, `Name:` field and every later
-  mention), photo markers, date of birth and age phrases, gender, nationality and place of
-  birth, marital status and children, religion, address, email, phone, URLs, titles
-  (Mr/Ms/Herr/Frau) and gendered pronouns (rewritten to they/them/their). Images are never
-  read at all: only the text layer is parsed.
+  mention; names in any script and with particles such as "van der" or "de la"), photo
+  markers, date of birth and age phrases ("aged 34", "a 45-year-old", "born in 1980",
+  "34 Jahre alt"), gender, nationality and place of birth, ethnicity, marital status and
+  children, religion, disability, address, email, phone, URLs, titles (Mr/Ms/Herr/Frau) and
+  gendered pronouns (rewritten to they/them/their). Field labels are recognised in English
+  and German (`Geburtsdatum:`, `Staatsangehörigkeit:`, `Familienstand:`, `Anschrift:` ...).
+  "Mother tongue" is kept, because it states a language level. Images are never read at all:
+  only the text layer is parsed.
 - Only the redacted text is sent to the API. The name stays on your machine and reappears only
   in the manager-facing outputs, in a column labelled "not used for matching" (`--blind`
   hides it there too).
 - `tests/test_invariance.py` changes name, address, email, phone, date of birth, nationality,
   gender, marital status, photo and pronouns, and asserts that (a) the text given to the
   extractor is byte-identical, (b) the prompt sent to Claude is byte-identical, and (c) the
-  match results are identical. It runs on hand-written variants, on four sample CVs (PDF and
-  DOCX), and on DOCX files with and without an embedded photo.
+  match results are identical. It runs on hand-written variants (including names that start
+  with a non-ASCII letter or contain particles), on a German-labelled CV, on four sample CVs
+  (PDF and DOCX), and on DOCX files with and without an embedded photo.
 - Missing information is `unknown`, never `not met`, and becomes a question for the
   candidate. Language levels like "fluent" are not guessed into CEFR levels.
 - Every claim needs a quote of at least two words (or eight characters) that is found in the CV
@@ -219,60 +230,77 @@ printed at the top of every shortlist.
   Entries older than `--cache-ttl-days` (default 30) are deleted at the start of each run.
   Deleting `out/` deletes the cache; `--no-cache` turns it off. Mock mode does not cache
   unless you pass `--cache`.
+- Error messages describe what went wrong without quoting CV or model text, because they are
+  printed in the terminal and stored in `run_report.json`. The optional n8n flow passes only the
+  counts to n8n, which keeps every execution's output (see [`n8n/README.md`](n8n/README.md)).
 - No real CVs are in this repository. `scripts/generate_samples.py` regenerates the
   fictional samples byte-for-byte.
 
 ## Limitations
 
 - **Redaction is best-effort, not a guarantee.** It is a set of regular expressions. It removes
-  labelled fields (`Name:`, `Date of birth:`, `Nationality:`, `Address:` and similar), email
-  addresses, phone numbers, URLs, gendered pronouns and titles. It finds the **name only from
-  a `Name:` label or from the first line of the CV** (after a "CV"/"Résumé" heading) when that
-  line looks like a name. A name placed elsewhere (below a headline, in a sidebar, in the file
-  name), an unlabelled address or birth date in free text, or an unusual layout is not removed,
-  and in real mode it is sent to the model with the rest of the text. It also cannot remove
+  labelled fields in English and German (`Name:`, `Date of birth:`, `Geburtsdatum:`,
+  `Nationality:`, `Address:` and similar), email addresses, phone numbers, URLs, common age
+  phrases, gendered pronouns and titles. It finds the **name only from a `Name:` label or from
+  the first line of the CV** (after a "CV"/"Lebenslauf" heading) when that line looks like a
+  name and contains no CV heading or job word ("Customer Support Specialist" is not taken as a
+  name). A name placed elsewhere (below a headline, in a DOCX page header, in a text-box sidebar
+  that is not at the top, in the file name), an unlabelled address or birth date in free text,
+  labels in other languages, or an unusual layout is not removed, and in real mode it is sent
+  to the model with the rest of the text. It also cannot remove
   proxies: graduation and employment years hint at age, school or club names at origin or
   gender, a native language at nationality. Check "Removed before matching" in each summary,
   and assume some personal data can reach the API.
 - **Hidden text is flagged, not removed.** Text a reader cannot see (white on a page without a
   coloured background, invisible render mode, under 1 pt, or outside the page) is still
   extracted, because the same signals also match the text layer of a scanned CV. When a PDF
-  has 30 or more hidden characters, the shortlist row, the summary and the CSV
-  (`file_warnings`) say so, and the manager should compare the PDF with the claims. A hidden
+  or DOCX has 30 or more hidden characters, the shortlist row, the summary and the CSV
+  (`file_warnings`) say so, and the manager should compare the file with the claims. In a DOCX
+  this means runs marked hidden, under 1 pt, or white without shading behind them. A hidden
   keyword can still back a claim; the warning is what makes that visible. The check is a
-  heuristic: white text on a dark image or band counts as visible, and other tricks (text
-  under an image, same colour as a coloured background) are not detected.
+  heuristic: white text on a dark image, band or shaded cell counts as visible, and other
+  tricks (text under an image, same colour as a coloured background, colour set by a Word
+  style, a text box placed off the page) are not detected.
 - **Prompt injection.** The CV is treated as data in the prompt (with `<`, `>` and `&`
   escaped, so it cannot open or close a prompt tag), and the model never decides the ranking,
   but a CV can still try to influence what the model extracts. Evidence checking limits this
   to claims whose value is written in the CV itself: a model told to "add Zendesk" or "start
   the job in 2010" has no quote that shows it, and the claim is dropped.
 - **No OCR.** Scanned image-only PDFs go to "manual review".
+- **DOCX page headers, footers, footnotes and tables nested in tables are not read.**
 - **Mock mode only understands the sample layout.** It exists for offline tests and demos; its
   results say nothing about LLM accuracy.
 - **Skill matching is literal.** `any_of` terms are matched as whole words against extracted
   skills; synonyms must be listed in `job.yaml`.
 - **Year-only dates** count from the middle of the year; "present" counts up to the start of
-  the `--as-of` month.
+  the `--as-of` month. A relevant role that starts after `--as-of` is not counted (warning).
+- **Cost is per CV.** Each new CV is one API call (cached afterwards). An automated intake (the
+  n8n flow) screens whatever arrives, so set a monthly spend limit for the API key.
 - **Real-mode accuracy has not been measured yet** (see [`CASE_STUDY.md`](CASE_STUDY.md)).
-- English-language CVs and criteria only.
+- Prompts, criteria and outputs are in English; redaction knows English and German labels.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
 ruff check .
-pytest -q                               # offline, no API key needed
+pytest -q                               # 218 offline tests, no API key needed
 python scripts/generate_samples.py      # regenerate samples (deterministic)
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, the test suite, a reproducibility check of the
 samples and a mock-mode run on Python 3.11 to 3.13.
 
-Security tests (each reproduces a finding of the 2026-10-11 security review, see
+Security tests (each reproduces a finding of the 2026-10-11 security reviews, see
 [`BUILD_LOG.md`](BUILD_LOG.md)): `test_evidence.py`, `test_report_safety.py`,
 `test_candidate_ids.py`, `test_limits.py`, `test_hidden_text.py`, `test_cache.py`,
-`test_env.py`, `test_terminal.py`, `test_packaging.py`.
+`test_env.py`, `test_terminal.py`, `test_packaging.py`, `test_parse_budget.py`,
+`test_docx_layout.py`, `test_n8n.py`, plus the name, German-label and age cases in
+`test_redaction.py` and `test_invariance.py`.
+
+Performance: `python scripts/benchmark.py` times each stage on the samples and the parse time
+of generated hostile files (no API key needed). Findings and measured before/after numbers are
+in [`OPTIMIZATIONS.md`](OPTIMIZATIONS.md).
 
 Optional automation: [`n8n/`](n8n/) has a workflow that runs the screening when a new CV lands
 in a folder and notifies the manager.

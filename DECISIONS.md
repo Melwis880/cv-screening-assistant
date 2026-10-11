@@ -131,3 +131,58 @@ One entry per architecture or security decision, written when the decision is ma
 - **Decision:** `cli.term_safe` replaces characters of Unicode categories Cc, Cf, Zl and Zp with `?`. It is applied to everything the CLI prints that can come from a CV file: the new "Needs manual review" and "Check before relying on the extracted claims" lists (file names, errors, warning labels), the duplicate-ID error, and pypdf's log warnings (routed through a sanitising handler on the `pypdf` logger).
 - **Alternatives:** Escape with `repr()`; strip only ESC; never print file names.
 - **Why:** File names are chosen by applicants (email attachments) and can contain ESC/OSC sequences (fake hyperlinks, screen clearing) or a right-to-left override that disguises `cv.exe` style names. The old CLI printed no such strings; the manual-review list added in this review does, and the manager needs it, so the names are printed but made inert. `?` keeps names readable, unlike `repr()`; stripping only ESC would miss bidi and C1 controls.
+
+## 2026-10-11 – A work budget for PDF parsing, not a timeout (optimization pass)
+- **Decision:** `Limits.max_pdf_ops` (300,000 drawing operators) and `max_pdf_content_mb` (5 MB of decoded content, a form counted each time it is drawn and all decoded forms counted once) are enforced in the visitor callback pypdf calls for every operator; over budget -> `LimitError` -> manual review. Not exposed as CLI options.
+- **Alternatives:** A wall-clock timeout per file; parsing in a subprocess that can be killed; lowering pypdf's global decompression limit.
+- **Why:** Small PDFs took 15-21 s (and ~45 min extrapolated) before any existing limit fired. Threads cannot be killed, and a timeout would make the outcome depend on machine speed; counting work is deterministic and testable. A subprocess is heavier and platform-specific. A global pypdf setting would affect the whole process. Samples use ~200 operators and 6 KB, so the defaults leave a wide margin; a very graphic-heavy CV lands in manual review, never in a rejection.
+
+## 2026-10-11 – Read DOCX with a small XML walker (optimization pass)
+- **Decision:** `parsing._DocxReader` walks the body XML in document order: paragraphs, table rows (one `<w:tc>` per cell, so merged cells appear once), text boxes once (the DrawingML copy, not the VML fallback) after their anchor paragraph, content controls and tracked insertions; deleted text is skipped. Style IDs are mapped once per document. Reading stops as soon as the text is over `max_chars`; XML parts over 10 MB go to manual review. python-docx still opens the package.
+- **Alternatives:** Keep `doc.paragraphs` + `doc.tables` and only cache the style lookup; `doc.iter_inner_content()`.
+- **Why:** The old path spent 71% of DOCX time in python-docx's per-paragraph style scan (0.9 ms per paragraph, so empty paragraphs were a DoS), put tables after all paragraphs and silently dropped text boxes and content controls, which template CVs use for sidebars. `iter_inner_content()` fixes the order but still skips text boxes, content controls and insertions. The sample DOCX files parse to byte-identical text.
+
+## 2026-10-11 – Drop Unicode format characters from CV text (optimization pass)
+- **Decision:** `normalize_text` removes all category-Cf characters (soft hyphen, zero-width space/joiner, bidi controls, BOM).
+- **Alternatives:** Remove only the soft hyphen; keep them and normalise only for matching.
+- **Why:** They split words ("Zen<SHY>desk" did not match "zendesk") and can reorder how quoted evidence is displayed. Removing them once at parse time keeps the text the model sees, the quotes it returns and the matcher consistent.
+
+## 2026-10-11 – The first-line name guess ignores headlines (optimization pass)
+- **Decision:** A first line is not taken as the name if it contains a CV heading or job word (customer, support, specialist, profile, experience, ...).
+- **Alternatives:** Only remove the full name string, never its single words; use the job's relevance keywords as the stop list.
+- **Why:** "Customer Support Specialist" as the name erased every "customer" and "support" in the CV and moved a tier-A candidate to tier C. Removing single name words is still needed (first names in free text), so the guess itself has to be stricter. A fixed list keeps redaction independent of the job, so the text sent for one CV is the same for every job. Cost: a person named like a job word is not auto-detected without a `Name:` label.
+
+## 2026-10-11 – 120-second timeout per API attempt (optimization pass)
+- **Decision:** `anthropic.Anthropic(max_retries=3, timeout=120)`. Amends the 2026-10-09 "parallel threads" entry, which set the retries.
+- **Alternatives:** SDK default (10 minutes); a shorter timeout; streaming.
+- **Why:** Timeouts are retried, so the default allowed 40 minutes per stalled CV. A Haiku extraction with `max_tokens=4096` takes seconds; 120 s leaves room for a slow response, and after four attempts the CV goes to manual review.
+
+## 2026-10-11 – Single-flight extraction per cache key (optimization pass)
+- **Decision:** `ExtractionCache.lock(key)` is held from lookup to write, so identical files in one run are extracted once.
+- **Alternatives:** De-duplicate files by hash before screening; accept the duplicate call.
+- **Why:** Both duplicates still need their own outputs (different file names, possibly different people sending the same template), so de-duplicating the file list would hide one. A per-key lock only makes the second wait for the first; it is a no-op without the cache.
+
+## 2026-10-11 – Redaction covers names in any script, particles and German labels (security review 2)
+- **Decision:** The first-line name check accepts capitalised or caseless letters of any script and lower-case particles (van, der, de, la, bin, ...); particles are not replaced throughout the text, but particles next to a removed name are folded into the token (at most three in a row, linear time). German field labels (Geburtsdatum, Staatsangehörigkeit, Familienstand, Geschlecht, Anschrift, ...) and more age phrases are removed. The invariance tests include such names and a German CV.
+- **Alternatives:** A named-entity model for names; a language-detection step with per-language rules; leave it documented as a limitation.
+- **Why:** The old rule removed "Anna Schmidt" but sent "Özlem Yılmaz" and "Anna van der Berg" to the model, so redaction treated people differently by origin, which is exactly what it exists to prevent. The demo employer is German, so German labels are the expected case, not an edge case. An NER model is a heavy dependency that is itself hard to test for bias; rules plus invariance tests stay explainable.
+
+## 2026-10-11 – Flag hidden DOCX text like hidden PDF text (security review 2)
+- **Decision:** Runs marked hidden, under 1 pt, or white with no shading behind them (run, paragraph or cell) are counted; 30+ characters give a "Hidden text in the DOCX" file warning. The text is still read. Extends the PDF entry of the first review.
+- **Alternatives:** Drop hidden runs; ignore DOCX.
+- **Why:** Same reasoning as for PDFs: the signals have innocent causes (template leftovers, white text on dark bands), so the manager decides. Without it, DOCX was the easy way around the PDF warning.
+
+## 2026-10-11 – `--blind` hides file names and uses neutral IDs (security review 2)
+- **Decision:** With `--blind`, candidate IDs are `cv-` plus 8 hex digits of SHA-256 over the file hash and file name, and the shortlist, CSV, summaries and terminal show "(hidden, see run_report.json)" instead of the file name (also inside error messages). `run_report.json` lists each ID's source file in every mode. Amends the 2026-10-09 blind entry ("hides it everywhere except the email drafts" now includes file names) and the security-review candidate-ID entry (stem + hash stays the default).
+- **Alternatives:** Keep stem-based IDs and only hide the source column; a separate mapping file.
+- **Why:** Real file names often are the applicant's name, so blind mode showed the name on every row. The hash of content and name keeps IDs unique per file and stable across runs; the mapping in `run_report.json` lets the manager find the CV after deciding. Email drafts keep the file name: they are written after the decision.
+
+## 2026-10-11 – Error messages without CV text; n8n stores counts only (security review 2)
+- **Decision:** Pydantic validation errors are reported as location + message, never with the input value. The n8n *Run screening* node prints only `job`, `cvs`, `manual_review` and `tiers` from `run_report.json`.
+- **Alternatives:** Truncate the messages; let n8n read the report from disk without printing it.
+- **Why:** Pydantic quotes the offending input, here model output copied from the CV, and errors are printed and stored in `run_report.json`. n8n keeps every execution's stdout in its database by default, so the whole report (candidate IDs, i.e. file names, and errors) ended up there with n8n's retention, not ours. Truncation would still leak a prefix.
+
+## 2026-10-11 – Symbolic links in the CV folder are not followed (security review 2)
+- **Decision:** `parse_cv` refuses a symlinked file (manual review, "symbolic link; not read") and its SHA-256 is not computed.
+- **Alternatives:** Follow links inside the folder only; skip links silently.
+- **Why:** A link in a shared applications folder could point at any file the manager can read, which would be sent to the API and quoted in outputs. Skipping silently would hide a file the manager might expect to be screened; manual review keeps it visible.
