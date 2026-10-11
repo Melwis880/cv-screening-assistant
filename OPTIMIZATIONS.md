@@ -98,8 +98,8 @@ characters / 4 + structured-output overhead, not measured with the API).
   `<w:tc>` cells, so a spanned cell appears once. Add a cap on the XML parts of the package, so
   the 50 MB unpacked limit (meant for embedded images) cannot be spent on markup.
 - **Tradeoffs:** none for normal files; a DOCX whose XML is over the new cap goes to manual review.
-- **Expected impact:** DOCX parsing on samples about 3× faster (measured after the fix); hostile
-  DOCX bounded by `max_chars`.
+- **Expected impact:** DOCX parsing on samples about 2× faster (see Applied for the measured
+  number); hostile DOCX bounded by `max_chars`.
 - **Removal safety:** the produced text for the samples must stay byte-identical (checked by the
   invariance and sample tests, and by comparing the redacted text of all 20 samples).
 
@@ -226,3 +226,71 @@ O9 (concurrency). O10, O11 deferred to after a real-mode run.
 3. Mock demo run: same tiers (A 7 / B 9 / C 4), same shortlist content.
 4. `scripts/benchmark.py` before/after for the samples and the hostile files.
 5. CI on Python 3.11-3.13.
+
+## Applied (2026-10-11)
+
+One commit per finding, each with a test that fails on the old code (the list-style test in
+`tests/test_docx_layout.py` is a guard that passes on both). The redacted text of all 20 samples
+is byte-identical before and after, and the mock demo run gives the same shortlist, summaries
+and emails (only timing fields in `run_report.json` differ).
+
+| Finding | Commit | Change |
+|---|---|---|
+| O1 PDF budget | `c7926b0` | operator + decoded-content budget per file (300,000 / 5 MB), forms charged per use |
+| O2 + O3 DOCX | `1eff8e6` | XML walker in reading order: tables in place, text boxes once, content controls, tracked insertions, merged cells once; style map once; early stop at `max_chars`; 10 MB XML cap |
+| O4 mother tongue | `76d744f` | not redacted when followed by "tongue" |
+| O8 format characters | `a469fa2` | Unicode Cf dropped in `normalize_text` |
+| O7 future roles | `0972981` | skipped with a warning instead of subtracting months |
+| O6 timeout | `2f94872` | 120 s per attempt, `max_retries=3` kept |
+| O5 headline as name | `894950b` | first-line name guess rejects lines with CV heading / job words |
+| O9 duplicate files | `1e940b5` | one lock per cache key (single-flight) |
+| O12 tier counts | `b742a92` | `ScreeningRun.tiers` |
+
+### Measured before / after (demo data, this container)
+
+`python scripts/benchmark.py` (samples: best of 5 before, best of 10 after):
+
+| Stage (20 samples) | Before (ms) | After (ms) |
+|---|---|---|
+| parse PDF (10 files) | 58.9 | 65.2 |
+| parse DOCX (10 files) | 189.9 | 87.7 |
+| redact | 7.7 | 7.3 |
+| mock extract + verify + match | 9.1 | 7.9 |
+| **total** | **265.6** | **168.1** |
+
+PDF parsing is about 0.6 ms per file slower: the budget decodes each page's content once more
+and looks up form sizes before extraction. That is the price of the bound below.
+
+| Hostile file | Before | After |
+|---|---|---|
+| PDF, 22 KB, 8.8 MB of empty text operators | 15.60 s, then "no text found" | 0.02 s, manual review (content budget) |
+| PDF, 1.9 KB, form of 20k operators used 40× | 21.50 s, then "no text found" | 2.15 s, manual review (operator budget) |
+| DOCX, 37 KB, 20,000 empty paragraphs | 19.78 s, then "no text found" | 0.13 s, "no text found" |
+| DOCX, 40,000 empty paragraphs (test) | ~37 s, then over `max_chars` | < 0.5 s, over `max_chars` |
+
+Worst cases still inside the PDF budget (measured): 4.8 MB of empty text operators 5.6 s,
+4.8 MB of `q Q` 6.9 s, a 2.4 MB form drawn twice 4.0 s; all end in manual review. Before the
+fix the same structure scaled to about 45 minutes per file (5,000 form uses × 0.5 s).
+
+Mock demo run (`screen run samples/ --job job.yaml --mock --as-of 2026-10-01`, 5 runs each):
+`wall_seconds` 0.325-0.385 before, 0.203-0.272 after; whole process 0.85-0.91 s before,
+0.63-0.66 s after. Tiers unchanged (A 7 / B 9 / C 4).
+
+Real mode (not measured, no API key): O9 saves one call per duplicate file in a run; O6 bounds a
+stalled call at 8 minutes instead of 40; O3, O4, O5 and O8 change results for CVs unlike the
+samples (tables, text boxes, "mother tongue", a headline first line, soft hyphens), which is
+the point of fixing them.
+
+### Deferred, and why
+- **O10 prompt overhead:** prompt caching cannot apply (prefix ~1,200 tokens, Haiku 4.5 needs
+  4,096); several CVs per call would mix applicants; trimming the schema descriptions needs a
+  real-mode accuracy run to show it does not hurt extraction.
+- **O11 output tokens:** grouping skills by evidence line is a schema and prompt change; it would
+  invalidate the cache and needs real runs to measure both the saving and the accuracy.
+- **Reading each file once (O12, second item):** microseconds on 20 files; not worth coupling
+  hashing to parsing.
+- **Lower PDF content budget:** 2 MB would cut the worst case to about 3 s, but designed CVs
+  with vector graphics could then land in manual review; 5 MB keeps that unlikely. Revisit with
+  real-world PDFs.
+- **DOCX headers, footers, footnotes and nested tables** are still not read. Headers usually hold
+  the name and contact block (redacted anyway); the others are rare in CVs.
