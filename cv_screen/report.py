@@ -354,7 +354,7 @@ def run_report(run: ScreeningRun) -> dict:
             None if run.usage.cost_usd is None or not n
             else round(run.usage.cost_usd / n * 40, 4)
         ),
-        "tiers": {t: sum(1 for c in run.ranked if c.counts.tier == t) for t in ("A", "B", "C")},
+        "tiers": run.tiers,
         "dropped_claims": sum(len(c.profile.dropped_claims) for c in run.ranked),
         "file_warnings": sum(len(c.flags) for c in run.candidates),
         "cache_hits": run.cache_hits,

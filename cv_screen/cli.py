@@ -144,7 +144,7 @@ def run(folder: Path, job_path: Path, out_dir: Path, mock: bool | None, model: s
     except DuplicateCandidateError as exc:
         raise click.ClickException(term_safe(str(exc))) from exc
 
-    tiers = {t: sum(1 for c in result.ranked if c.counts.tier == t) for t in "ABC"}
+    tiers = result.tiers
     click.echo(f"Screened {len(result.ranked)} of {len(result.candidates)} CVs in "
                f"{result.wall_seconds:.1f}s. Tier A: {tiers['A']}, B: {tiers['B']}, "
                f"C: {tiers['C']}, manual review: {len(result.failed)}.")

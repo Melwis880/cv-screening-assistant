@@ -61,6 +61,10 @@ class ScreeningRun:
         return [c for c in self.candidates if c.counts is None]
 
     @property
+    def tiers(self) -> dict[str, int]:
+        return {t: sum(1 for c in self.ranked if c.counts.tier == t) for t in ("A", "B", "C")}
+
+    @property
     def cache_hits(self) -> int:
         return sum(1 for c in self.candidates if c.cached)
 
