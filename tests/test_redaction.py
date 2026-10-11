@@ -67,6 +67,18 @@ def test_mother_tongue_is_kept_and_counts_as_native(job, as_of):
     assert german.status == "met", german.note
 
 
+def test_headline_on_the_first_line_is_not_taken_as_name(job, as_of):
+    # e.g. a DOCX whose name sits in the page header (not read): the first body line is a title
+    cv = ("Customer Support Specialist\nExperience\nCustomer Support Agent, Shop GmbH, "
+          "2020 - present\n- Answered customer emails in Zendesk\nLanguages\nGerman: native\n"
+          "English: C1\nSkills\nZendesk, customer emails, live chat\n")
+    result = redact(cv)
+    assert result.name is None
+    assert CANDIDATE_TOKEN not in result.text
+    cand = screen_text("c", "c.txt", cv, job, MockExtractor(), as_of)
+    assert cand.counts.tier == "A"
+
+
 def test_section_heading_is_not_taken_as_name():
     result = redact("Profile\nCustomer support agent.\n")
     assert result.name is None

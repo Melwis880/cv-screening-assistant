@@ -95,6 +95,20 @@ _GENDERED_WORDS_RE = re.compile(
 )
 _NAME_LINE_RE = re.compile(r"^[A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*){1,3}$")
 _GENERIC_TITLES = {"curriculum vitae", "cv", "resume", "résumé", "lebenslauf"}
+# Words that make a capitalised first line a headline, not a name ("Customer Support
+# Specialist", "Personal Details"). Taking such a line as the name would replace these words
+# everywhere in the CV with [CANDIDATE] and erase the candidate's relevant experience.
+_HEADLINE_WORDS = {
+    "about", "administrator", "advisor", "agent", "analyst", "applicant", "application",
+    "assistant", "associate", "call", "career", "cashier", "centre", "center", "clerk",
+    "consultant", "contact", "coordinator", "curriculum", "customer", "cv", "desk", "details",
+    "developer", "education", "engineer", "executive", "experience", "front", "graduate",
+    "help", "helpdesk", "information", "intern", "junior", "languages", "lead", "manager",
+    "objective", "officer", "operator", "personal", "professional", "profile",
+    "receptionist", "representative", "resume", "retail", "sales", "senior", "service",
+    "services", "skills", "specialist", "summary", "support", "team", "trainee", "virtual",
+    "vitae", "work", "worker",
+}
 
 
 @dataclass
@@ -200,7 +214,8 @@ def _guess_name_line(lines: list[str]) -> int | None:
         s = line.strip()
         if not s or s.lower() in _GENERIC_TITLES:
             continue
-        if _NAME_LINE_RE.match(s) and not any(ch.isdigit() for ch in s):
+        if (_NAME_LINE_RE.match(s) and not any(ch.isdigit() for ch in s)
+                and not _HEADLINE_WORDS & {w.strip(".,").lower() for w in s.split()}):
             return idx
         return None
     return None
