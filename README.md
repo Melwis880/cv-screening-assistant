@@ -13,6 +13,11 @@ Demo scenario: a 20-person online shop hiring a *Junior Customer Support Special
 CVs in [`samples/`](samples/) are synthetic and fictional (placeholder names, `example.com`
 addresses, a "SYNTHETIC CV" footer on every page).
 
+![Terminal output of "MOCK_LLM=1 screen run samples/ --job job.yaml": 20 of 20 CVs screened, tier A 7, B 9, C 4, no emails sent. Below it, the rendered out/shortlist.md with the "tool recommends, the hiring manager decides" notice, the printed ranking rule and the tier A table: rank, candidate ID, name marked "not used for matching", must-haves and nice-to-haves met, unknowns and reasons.](docs/demo-run.png)
+
+*Mock-mode demo run on the synthetic samples, cut after tier A. Regenerate with
+`python scripts/render_demo_image.py`.*
+
 ## Quickstart
 
 ```bash
@@ -75,6 +80,7 @@ the reasoning behind each choice.
 |---|---|
 | `cv_screen/parsing.py` | PDF (pypdf, with a per-file work budget), DOCX (paragraphs, tables, text boxes and content controls in reading order), TXT/MD to normalised text; hidden-text flags |
 | `cv_screen/redact.py` | Remove protected attributes; return the name separately for manager-facing output |
+| `cv_screen/job.py` | Load and validate `job.yaml` (criterion types, unknown keys rejected) |
 | `cv_screen/schema.py` | Pydantic models; strict JSON schema for structured outputs |
 | `cv_screen/extract.py` | `ClaudeExtractor`, `MockExtractor`, quote verification, experience calculation, token cost |
 | `cv_screen/matching.py` | Criterion rules, tiers, sort key |
@@ -96,7 +102,8 @@ screen run FOLDER --job job.yaml [options]
   --model TEXT        Claude model (default: $CV_SCREEN_MODEL or claude-haiku-4-5-20251001)
   --as-of YYYY-MM-DD  count experience up to this date (default: today)
   --blind             hide names and file names in shortlist, CSV, summaries and terminal
-                      (run_report.json keeps the ID -> file mapping)
+                      (run_report.json keeps the ID -> file mapping; the email
+                      drafts keep the name, since they are addressed to the candidate)
   --workers N         parallel API calls (default: 4)
   --max-file-mb MB    larger files go to manual review unread (default: 5)
   --max-pages N       PDFs with more pages go to manual review (default: 10)
@@ -276,7 +283,9 @@ printed at the top of every shortlist.
   the `--as-of` month. A relevant role that starts after `--as-of` is not counted (warning).
 - **Cost is per CV.** Each new CV is one API call (cached afterwards). An automated intake (the
   n8n flow) screens whatever arrives, so set a monthly spend limit for the API key.
-- **Real-mode accuracy has not been measured yet** (see [`CASE_STUDY.md`](CASE_STUDY.md)).
+- **No real-mode run has been measured yet.** All numbers in this repo come from mock-mode demo
+  runs or are labelled estimates; time, cost and extraction accuracy with Claude are unmeasured
+  (see [`CASE_STUDY.md`](CASE_STUDY.md)).
 - Prompts, criteria and outputs are in English; redaction knows English and German labels.
 
 ## Development
@@ -286,6 +295,7 @@ pip install -e ".[dev]"
 ruff check .
 pytest -q                               # 218 offline tests, no API key needed
 python scripts/generate_samples.py      # regenerate samples (deterministic)
+python scripts/render_demo_image.py     # regenerate docs/demo-run.png (needs markdown, playwright)
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, the test suite, a reproducibility check of the
@@ -307,3 +317,7 @@ in a folder and notifies the manager.
 
 Project tracking: [`PROGRESS.md`](PROGRESS.md), [`DECISIONS.md`](DECISIONS.md),
 [`BUILD_LOG.md`](BUILD_LOG.md), case study in [`CASE_STUDY.md`](CASE_STUDY.md).
+
+## License
+
+MIT, see [`LICENSE`](LICENSE).
