@@ -40,6 +40,10 @@ class Limits:
     max_pdf_pages: int = 10
     max_chars: int = 30_000  # roughly 8k tokens, far above a real 1-3 page CV
     max_unpacked_mb: float = 50  # DOCX is a zip; guards against zip bombs
+    # PDF work budget: a small file can hold megabytes of compressed drawing operators, or
+    # invoke one form thousands of times. Samples use about 200 operators and 6 KB per file.
+    max_pdf_ops: int = 300_000  # content-stream operators visited, forms included
+    max_pdf_content_mb: float = 5  # decoded content parsed; a form counts each time it is used
 
     @property
     def max_file_bytes(self) -> int:
@@ -101,9 +105,13 @@ def _parse_pdf(data: bytes, name: str, limits: Limits, warnings: list[str]) -> s
         raise LimitError(f"{name} has {pages} pages, over the {limits.max_pdf_pages} page limit "
                          f"(--max-pages); read it manually")
     parts, chars, hidden, shown = [], 0, 0, 0
+    budget = _PdfBudget(name, limits)
     for page in reader.pages:
-        tracker = _Visibility(page.mediabox)
+        contents = page.get_contents()
+        budget.charge_bytes(len(contents.get_data()) if contents is not None else 0)
+        tracker = _Visibility(page.mediabox, budget, _form_sizes(page.get("/Resources"), budget))
         parts.append(page.extract_text(visitor_operand_before=tracker.before) or "")
+        budget.check()  # pypdf swallows an error raised inside a form; re-raise it here
         hidden, shown = hidden + tracker.hidden, shown + tracker.hidden + tracker.visible
         chars += len(parts[-1]) + 1
         if chars > limits.max_chars:  # stop extracting early
@@ -117,17 +125,78 @@ def _parse_pdf(data: bytes, name: str, limits: Limits, warnings: list[str]) -> s
     return "\n".join(parts)
 
 
+class _PdfBudget:
+    """Counts the work pypdf does for one file and raises `LimitError` once it is over."""
+
+    def __init__(self, name: str, limits: Limits):
+        self.name = name
+        self.max_ops = limits.max_pdf_ops
+        self.max_bytes = int(limits.max_pdf_content_mb * MB)
+        self.ops = 0
+        self.bytes = 0
+        self.error: LimitError | None = None
+
+    def charge_op(self) -> None:
+        self.ops += 1
+        if self.ops > self.max_ops:
+            self._fail(f"more than {self.max_ops} drawing operators")
+
+    def charge_bytes(self, n: int) -> None:
+        self.bytes += n
+        if self.bytes > self.max_bytes:
+            self._fail(f"more than {self.max_bytes / MB:g} MB of page content")
+
+    def check(self) -> None:
+        if self.error:
+            raise self.error
+
+    def _fail(self, what: str) -> None:
+        self.error = LimitError(f"{self.name} has {what}, over the PDF parsing limit; "
+                                "read it manually")
+        raise self.error
+
+
+def _form_sizes(resources: Any, budget: _PdfBudget, seen: set | None = None,
+                sizes: dict | None = None) -> dict:
+    """Decoded size of every form XObject reachable from `resources`, by resource name (the
+    largest if two forms share a name), so each use of a form can be charged before pypdf
+    parses it. Images are skipped without decoding."""
+    seen = set() if seen is None else seen
+    sizes = {} if sizes is None else sizes
+    try:
+        xobjects = resources.get_object().get("/XObject") if resources is not None else None
+        items = list(xobjects.get_object().items()) if xobjects is not None else []
+    except AttributeError:
+        return sizes
+    for name, ref in items:
+        obj = ref.get_object()
+        if not hasattr(obj, "get") or obj.get("/Subtype") != "/Form":
+            continue
+        size = len(obj.get_data())
+        if size > budget.max_bytes:
+            budget.charge_bytes(size)  # one form alone is over the budget
+        sizes[name] = max(sizes.get(name, 0), size)
+        key = getattr(ref, "idnum", id(obj))
+        if key not in seen:
+            seen.add(key)
+            _form_sizes(obj.get("/Resources"), budget, seen, sizes)
+    return sizes
+
+
 class _Visibility:
     """Follows the PDF graphics state while pypdf extracts a page and counts the characters a
     reader cannot see: render mode invisible, white fill on a page with no coloured fill or
     image drawn before it, an effective size under 1 pt, or a position outside the page.
-    A heuristic: it only feeds a warning for the manager."""
+    A heuristic: it only feeds a warning for the manager. It also charges every operator, and
+    every form before it is drawn, to the file's `_PdfBudget`."""
 
     TEXT_OPS = {b"Tj", b"TJ", b"'", b'"'}
     PAINT_OPS = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
     BACKDROP_OPS = {b"Do", b"sh", b"INLINE IMAGE"}  # images, forms, shadings
 
-    def __init__(self, box: Any):
+    def __init__(self, box: Any, budget: _PdfBudget, forms: dict):
+        self.budget = budget
+        self.forms = forms
         self.box = [float(v) for v in (box.left, box.bottom, box.right, box.top)]
         self.state = {"white": False, "render": 0, "size": 12.0}
         self.stack: list[dict] = []
@@ -136,6 +205,9 @@ class _Visibility:
         self.visible = 0
 
     def before(self, op: bytes, args: list, cm: list, tm: list) -> None:
+        self.budget.charge_op()
+        if op == b"Do" and args:
+            self.budget.charge_bytes(self.forms.get(args[0], 0))
         s = self.state
         nums = [float(a) for a in args if isinstance(a, int | float)]
         if op == b"q":
