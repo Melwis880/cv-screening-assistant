@@ -108,7 +108,7 @@ Presentation and consistency pass only: no behaviour, default model or DECISIONS
 - [x] Demo image `docs/demo-run.png` from a real mock run, with alt text
 - [x] Full-history scan for secrets and personal data (gitleaks + custom scan): nothing found
 - [x] `.gitignore` covers `.env`, caches and `out/`; `.env.example` has no values
-- [ ] PR opened, CI green on the PR
+- [x] PR opened (#2), CI green on Python 3.11-3.13 (`186ced9`)
 
 ## Final state (2026-10-11, after the optimization pass and security review 2)
 
