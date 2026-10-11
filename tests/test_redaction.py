@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from cv_screen.extract import MockExtractor
@@ -90,6 +92,12 @@ def test_first_line_names_in_any_script_and_with_particles_are_removed(name):
     assert result.name == name
     assert first not in result.text and last not in result.text
     assert "Mr" not in result.text and "[CANDIDATE] drove the van der Firma" in result.text
+
+
+def test_long_run_of_name_particles_is_linear():
+    started = time.perf_counter()
+    redact("Name: Joost van der Berg\nProfile\n" + "van " * 7000 + "end\n")
+    assert time.perf_counter() - started < 0.5  # quadratic version: 5.4 s
 
 
 def test_section_heading_is_not_taken_as_name():

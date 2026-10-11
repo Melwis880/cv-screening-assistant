@@ -282,9 +282,11 @@ def _looks_like_name(line: str) -> bool:
 _PARTICLE_ALT = "|".join(sorted(_NAME_PARTICLES, key=len, reverse=True))
 _TOK = re.escape(CANDIDATE_TOKEN)
 # Particles and initials next to a removed name go too ("van der [CANDIDATE]" would still hint
-# at origin), and a run of name parts becomes one token.
+# at origin), and a run of name parts becomes one token. At most 3 in a row: an unbounded
+# repeat would rescan a long run of "van van van ..." from every word (quadratic time).
 _NAME_RUN_RE = re.compile(
-    rf"(?:\b(?:{_PARTICLE_ALT})\s+)*{_TOK}(?:\s+(?:(?:{_PARTICLE_ALT}|\w\.)\s+)*{_TOK})*",
+    rf"(?:\b(?:{_PARTICLE_ALT})\s+){{0,3}}{_TOK}"
+    rf"(?:\s+(?:(?:{_PARTICLE_ALT}|\w\.)\s+){{0,3}}{_TOK})*",
     re.IGNORECASE,
 )
 
