@@ -75,6 +75,7 @@ the reasoning behind each choice.
 |---|---|
 | `cv_screen/parsing.py` | PDF (pypdf, with a per-file work budget), DOCX (paragraphs, tables, text boxes and content controls in reading order), TXT/MD to normalised text; hidden-text flags |
 | `cv_screen/redact.py` | Remove protected attributes; return the name separately for manager-facing output |
+| `cv_screen/job.py` | Load and validate `job.yaml` (criterion types, unknown keys rejected) |
 | `cv_screen/schema.py` | Pydantic models; strict JSON schema for structured outputs |
 | `cv_screen/extract.py` | `ClaudeExtractor`, `MockExtractor`, quote verification, experience calculation, token cost |
 | `cv_screen/matching.py` | Criterion rules, tiers, sort key |
@@ -96,7 +97,8 @@ screen run FOLDER --job job.yaml [options]
   --model TEXT        Claude model (default: $CV_SCREEN_MODEL or claude-haiku-4-5-20251001)
   --as-of YYYY-MM-DD  count experience up to this date (default: today)
   --blind             hide names and file names in shortlist, CSV, summaries and terminal
-                      (run_report.json keeps the ID -> file mapping)
+                      (run_report.json keeps the ID -> file mapping; the email
+                      drafts keep the name, since they are addressed to the candidate)
   --workers N         parallel API calls (default: 4)
   --max-file-mb MB    larger files go to manual review unread (default: 5)
   --max-pages N       PDFs with more pages go to manual review (default: 10)
@@ -276,7 +278,9 @@ printed at the top of every shortlist.
   the `--as-of` month. A relevant role that starts after `--as-of` is not counted (warning).
 - **Cost is per CV.** Each new CV is one API call (cached afterwards). An automated intake (the
   n8n flow) screens whatever arrives, so set a monthly spend limit for the API key.
-- **Real-mode accuracy has not been measured yet** (see [`CASE_STUDY.md`](CASE_STUDY.md)).
+- **No real-mode run has been measured yet.** All numbers in this repo come from mock-mode demo
+  runs or are labelled estimates; time, cost and extraction accuracy with Claude are unmeasured
+  (see [`CASE_STUDY.md`](CASE_STUDY.md)).
 - Prompts, criteria and outputs are in English; redaction knows English and German labels.
 
 ## Development
